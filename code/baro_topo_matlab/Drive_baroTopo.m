@@ -91,12 +91,12 @@ for ii=1:Nt
         energy(:,:,ii/countDiag) = ENE; enstrophy(:,:,ii/countDiag) = ENS;
         Um(:,ii/countDiag) = Ut;
 %         toc
-        if mod(ii,1E5)==0
+        if mod(ii,100)==0
            display(['iteration i = ', num2str(ii), '; energy E = ',num2str(sum(sum(ENE)))]);
         end
-        
+
     end
-    
+
     M = 1./(1-.25*dt*L);
     % First stage ARK4
     psik = inv_laplacian(q,params).*Lmod;
@@ -145,8 +145,8 @@ for ii=1:Nt
     k5 = RHS_Spectral(q5,psik,U5,params).*Lmod;
     l5 = L.*q5;
     u5 = RHS_meanFlow(psik,params);
-    
-    
+
+
     % Successful step, proceed to evaluation
     t = t+dt;
     qp = real(ifft2(q+dt*(0.1579162951616714*(k0+l0)+0.1867589405240008*(k2+l2)+...
@@ -158,5 +158,10 @@ for ii=1:Nt
     if any(abs(qp(:))>qlim),break,end
 end
 
+[xx,yy] = meshgrid(linspace(-pi,pi,params.N));
+figure
+contour(xx,yy,qp(:,:),50); colorbar;
+title(['barotropic mode at t = ', num2str(t)]);
+xlabel('x'); ylabel('y');
 
-% save(['./57model1_all_U',num2str(U/sqrt(gamma)),'H0',num2str(H*100)]);
+save(['./57model1_all_U',num2str(U/sqrt(gamma)),'H0',num2str(H*100)]);

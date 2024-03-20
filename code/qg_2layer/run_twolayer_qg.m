@@ -5,16 +5,15 @@
 % Set simulation parameters; ocean regime
 N = 256;       % Number of points in each direction
 dt = 5E-4;     % initial time step size
-Nt = 1E5;      % Number of time steps
+Nt = 1.1* 1E4;      % Number of time steps
 qlim = 1.5E5;  % if any q > qlim, simulation stops
 
 % Set physical parameters
 kd = 25;       % Nondimensional deformation wavenumber
-kb = 0;        % Nondimensional beta wavenumber, beta = kb^2
+kb = 0;        % Nondimensional beta wavenumber, beta = kb^2 
 U = 1;         % zonal shear flow
 r = 8;         % Nondimensional Ekman friction coefficient
 nu = 5E-15;    % Coefficient of biharmonic vorticity diffusion
-
 
 
 % Set up hyperviscous PV dissipation
@@ -63,7 +62,7 @@ for ii=1:Nt
         ke(:,ii/countDiag) = KE; ape(:,ii/countDiag) = APE;
         [VB,UTZ] = QG_Diagnostics(q,params);
         vb(ii/countDiag) = VB; utz(:,ii/countDiag) = UTZ;
-        
+
         display(['iteration i = ', num2str(ii), '; time step dt = ',num2str(dt), ', ene = ',num2str(sum(KE+APE))]);
         toc;
     end
@@ -102,7 +101,7 @@ for ii=1:Nt
      if r1>tol,dt=.75*dt;continue,end
 
 
-            
+
     % Successful step, proceed to evaluation
     t = t+dt;
     qp = real(ifft2(q+dt*(0.1579162951616714*(k0+l0)+0.1867589405240008*(k2+l2)+...
@@ -120,10 +119,10 @@ end
 if any(isnan(q(:)))
     fprintf('NaN\n')
 else
-%     save('QG_DATA.mat','ii','countDiag','dt','tol','params','T','ke','ape','vb','utz', 'qp');
+    save('QG_DATA.mat','ii','countDiag','dt','tol','params','T','ke','ape','vb','utz', 'qp');
 end
 
-figure
+h = figure;
 subplot(1,2,1)
 contour(xx,yy,qp(:,:,1),50); colorbar;
 title(['barotropic mode at t = ', num2str(t)]);
@@ -132,13 +131,15 @@ subplot(1,2,2)
 contour(xx,yy,qp(:,:,2),50); colorbar;
 title(['baroclinic mode at t = ', num2str(t)]);
 xlabel('x'); ylabel('y');
+print(h, 'mode.png', '-dpng', '-r150')
 
-figure
+h1 = figure;
 subplot(1,2,1)
 loglog([0:N/2],mean(ke(:,end-100:end),2),'.-', 'LineWidth',1); hold on;
 title('kinetic energy spectrum'); xlabel('wavenumber');
 subplot(1,2,2)
 loglog([0:N/2],mean(ape(:,end-100:end),2),'.-', 'LineWidth',1); hold on;
 title('potential energy spectrum'); xlabel('wavenumber');
+print(h1, 'energy.png', '-dpng', '-r150')
 
-exit
+% exit
