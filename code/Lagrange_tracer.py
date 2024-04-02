@@ -1,5 +1,5 @@
 import numpy as np
-
+from numba import jit
 
 
 class Lagrange_tracer_model:
@@ -42,6 +42,7 @@ class Lagrange_tracer_model:
         self.interv = interv
         self.t_interv = t_interv
 
+    @jit(nopython=True)
     def forward(self):
         """
         Integrates tracer locations using forward Euler method.
