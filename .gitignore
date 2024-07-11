@@ -4,3 +4,16 @@
 *.gif
 *.npy
 *.npz
+report/Report_Zhongrui_0126_QG_LangrangeDA.pdf
+*.pdf
+refers/LDA_notes.pdf
+refers/LDA_notes.pdf
+*.pyc
+code/.ipynb_checkpoints/Lagrange_tracer-checkpoint.ipynb
+code/.ipynb_checkpoints/Lagrangian_DA-checkpoint.ipynb
+code/.ipynb_checkpoints/LSM-checkpoint.ipynb
+code/.ipynb_checkpoints/LSM-Copy1-checkpoint.ipynb
+code/.ipynb_checkpoints/LSM_K16-checkpoint.ipynb
+code/.ipynb_checkpoints/qg_2layer_topo-checkpoint.ipynb
+code/qg_2layer_topo/.ipynb_checkpoints/pyqg-checkpoint.ipynb
+code/qg_2layer_topo/.ipynb_checkpoints/qg_2layer_topo-checkpoint.ipynb

@@ -2,6 +2,12 @@
 import numpy as np
 
 
+def adjust_ik(ik, cut, K):
+    if ik < K//2 - cut:
+        return ik
+    else:
+        return ik -cut*2-1
+
 def trunc2full(psi_k, K, cut):
     N = psi_k.shape[-1]
     psi_k_full = np.zeros((K,K,N), dtype='complex')

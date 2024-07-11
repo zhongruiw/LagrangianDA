@@ -4,19 +4,19 @@
 rng(2024);
 
 % Set simulation parameters; ocean regime
-N = 128;       % Number of points in each direction
-dt = 5*1E-4;     % initial time step size
-Nt = 201*1E4;      % Number of time steps
+N = 16;       % Number of points in each direction
+dt = 1E-5;     % initial time step size
+Nt = 100*1E4;      % Number of time steps
 qlim = 1.5E4;  % if any q > qlim, simulation stops
-s_rate = 20;   % subsampling rate
-cut = 32;      % number of truncated modes = cut*2+1
+s_rate = 1;   % subsampling rate
+cut = 0;      % number of truncated modes = cut*2+1
 
 % Set physical parameters
 kd = 10;       % Nondimensional deformation wavenumber
-kb = sqrt(22); % Nondimensional beta wavenumber, beta = kb^2 
+kb = sqrt(60); % Nondimensional beta wavenumber, beta = kb^2 
 U = 1;         % zonal shear flow
 r = 9;         % Nondimensional Ekman friction coefficient
-nu = 4*1E-13;    % Coefficient of biharmonic vorticity diffusion
+nu = 4*1E-6;    % Coefficient of biharmonic vorticity diffusion
 H = 10;       % Topography parameter %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 % Set up hyperviscous PV dissipation
@@ -28,7 +28,6 @@ for jj=1:N
         L(ii,jj,:) = -nu*kr^8;
     end
 end
-% L = ones([N N 2]);
 
 clear kr ii jj
 
@@ -54,8 +53,8 @@ q = fft2(qp);
 Ut = params.U;
 
 % Diagnostics
-tstart = Nt-2000000;
-countDiag = 1000; % Compute diagnostics every countDiag steps
+tstart = Nt-100000;
+countDiag = 100; % Compute diagnostics every countDiag steps
 T = zeros(1,Nt/countDiag);
 vb = zeros(1,Nt/countDiag);       % flux transport
 utz = zeros(N,Nt/countDiag);      % zonal mean flow
@@ -65,8 +64,10 @@ ene = zeros(N/2+1,Nt/countDiag);   % energy
 etp = zeros(N/2+1,Nt/countDiag);  % enstrophy energy
 ene_t = zeros(1,Nt/countDiag);   % energy
 etp_t = zeros(1,Nt/countDiag);  % enstrophy energy
-psi_1_t = zeros(N-cut*2-1,N-cut*2-1,(Nt-tstart)/s_rate);  % upper layer stream function
-psi_2_t = zeros(N-cut*2-1,N-cut*2-1,(Nt-tstart)/s_rate);  % upper layer stream function
+% psi_1_t = zeros(N-cut*2-1,N-cut*2-1,(Nt-tstart)/s_rate);  % upper layer stream function
+% psi_2_t = zeros(N-cut*2-1,N-cut*2-1,(Nt-tstart)/s_rate);  % upper layer stream function
+psi_1_t = zeros(N,N,(Nt-tstart)/s_rate);  % upper layer stream function
+psi_2_t = zeros(N,N,(Nt-tstart)/s_rate);  % upper layer stream function
 % v1_t = zeros(N,N,(Nt-tstart)/countDiag);  % upper layer stream function
 % u1_t = zeros(N,N,(Nt-tstart)/countDiag);  % upper layer stream function
 qp_t = zeros(N,N,2,9);
@@ -177,21 +178,21 @@ for ii=1:Nt
         psi_bt = InvBT.*(q_bt - 0.5*hk(:,:)); 
         psi_bc = InvBC.*(q_bc + 0.5*hk(:,:)); 
         temp1 = psi_bt+psi_bc;
-        temp1(cutRow,:) = [];
-        temp1(:,cutRow) = [];
+        % temp1(cutRow,:) = [];
+        % temp1(:,cutRow) = [];
         temp2 = psi_bt-psi_bc;
-        temp2(cutRow,:) = [];
-        temp2(:,cutRow) = [];
+        % temp2(cutRow,:) = [];
+        % temp2(:,cutRow) = [];
         psi_1_t(:,:,(ii-tstart)/s_rate) = temp1;
         psi_2_t(:,:,(ii-tstart)/s_rate) = temp2;
 
-        % if mod(ii-tstart,countDiag)==0
-        %     % Real-Space quantities
-        %     v1 = real(ifft2(-dX(:,:,1).*psi_1_t(:,:,ii-tstart)));
-        %     u1 = real(ifft2(dY(:,:,1).*psi_1_t(:,:,ii-tstart)));
-        %     v1_t(:,:,(ii-tstart)/countDiag) = v1;
-        %     u1_t(:,:,(ii-tstart)/countDiag) = u1;        
-        % end
+        if mod(ii-tstart,countDiag)==0
+            % Real-Space quantities
+            v1 = real(ifft2(-dX(:,:,1).*psi_1_t(:,:,ii-tstart)));
+            u1 = real(ifft2(dY(:,:,1).*psi_1_t(:,:,ii-tstart)));
+            v1_t(:,:,(ii-tstart)/countDiag) = v1;
+            u1_t(:,:,(ii-tstart)/countDiag) = u1;        
+        end
     end
 end
 toc
@@ -205,8 +206,7 @@ qp_t = circshift(qp_t, [0, N/2, 0, 0]);
 if any(isnan(q(:)))
     fprintf('NaN\n')
 else
-    % save('QG_DATA_topo075_0221.mat','ii','countDiag','dt','tol','params','T','ke','ape','ene','etp','vb','utz', 'qp','topo','-v7.3'); %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-    save('QG_DATA_topo10_nu4e-13_beta22_K128.mat','ii','countDiag','dt','tol','params','T','ke','ape','ene','etp','vb','utz', 'qp','topo','psi_1_t','psi_2_t','s_rate','cut','-v7.3'); %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+    save('QG_DATA_topo10_nu4e-6_beta60_K16_dt1e-5_tr.mat','ii','countDiag','dt','tol','params','T','ke','ape','ene','etp','vb','utz', 'qp','topo','psi_1_t','psi_2_t','s_rate','cut','u1_t','v1_t','-v7.3'); %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 end
 
 h5 = figure(5);
@@ -221,7 +221,7 @@ for i = 1:9
     xlabel('x'); ylabel('y');
     % set(gca,'fontsize',12)
 end
-print(h5, 'upper_topo10_nu4e-13_beta22_K128_snap.png', '-dpng', '-r150') 
+print(h5, 'upper_topo10_nu4e-6_beta60_K16_dt1e-5_tr_snap.png', '-dpng', '-r150') 
 
 
 h6 = figure(6);
@@ -236,7 +236,7 @@ for i = 1:9
     xlabel('x'); ylabel('y');
     % set(gca,'fontsize',12)
 end
-print(h6, 'lower_topo10_nu4e-13_beta22_K128_snap.png', '-dpng', '-r150') 
+print(h6, 'lower_topo10_nu4e-6_beta60_K16_dt1e-5_tr_snap.png', '-dpng', '-r150') 
 
 % t=20;
 % t=10;
@@ -254,7 +254,7 @@ caxis([-250 250]);
 colorbar;  % need ot add topography here since we use 'relative PV' in integration %%%%%%%%%%%%%%%%%%%%%%%%
 title(['lower layer mode at t = ', num2str(t)]);
 xlabel('x'); ylabel('y');
-print(h, 'mode_topo10_nu4e-13_beta22.png', '-dpng', '-r150') 
+print(h, 'mode_topo10_nu4e-6_beta60_K16_dt1e-5_tr.png', '-dpng', '-r150') 
 
 h1 = figure(2);
 set(h1, 'Position', [20, 20, 500, 300]); % Set the figure size ([left, bottom, width, height])
@@ -264,7 +264,7 @@ title('kinetic energy spectrum'); xlabel('wavenumber');
 subplot(1,2,2)
 loglog([0:N/2],mean(ape(:,end-100:end),2),'.-', 'LineWidth',1); hold on;
 title('potential energy spectrum'); xlabel('wavenumber');
-print(h1, 'energy_topo10_nu4e-13_beta22.png', '-dpng', '-r150')
+print(h1, 'energy_topo10_nu4e-6_beta60_K16_dt1e-5_tr.png', '-dpng', '-r150')
 
 h3 = figure(3);
 set(h3, 'Position', [20, 20, 500, 300]); % Set the figure size ([left, bottom, width, height])
@@ -274,7 +274,7 @@ title('energy spectrum'); xlabel('wavenumber');
 subplot(1,2,2)
 loglog([0:N/2],mean(etp(:,end-100:end),2),'.-', 'LineWidth',1); hold on;
 title('enstrophy spectrum'); xlabel('wavenumber');
-print(h3, 'mode_ene_ens_topo10_nu4e-13_beta22.png', '-dpng', '-r150')
+print(h3, 'mode_ene_ens_topo10_nu4e-6_beta60_K16_dt1e-5_tr.png', '-dpng', '-r150')
 
 h4 = figure(4);
 set(h4, 'Position', [20, 20, 500, 300]); % Set the figure size ([left, bottom, width, height])
@@ -284,4 +284,4 @@ title('energy series'); xlabel('time');
 subplot(1,2,2)
 plot([1:size(etp_t,2)],etp_t,'.-', 'LineWidth',1); hold on;
 title('enstrophy series'); xlabel('time');
-print(h4, 'series_ene_ens_topo10_nu4e-13_beta22.png', '-dpng', '-r150')
+print(h4, 'series_ene_ens_topo10_nu4e-6_beta60_K16_dt1e-5_tr.png', '-dpng', '-r150')
