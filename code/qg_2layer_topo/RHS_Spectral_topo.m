@@ -13,7 +13,7 @@ if isempty(DX)
     Laplacian = dX(:,:,1).^2+dY(:,:,1).^2;
     InvBT = 1./Laplacian; InvBT(1,1) = 0;
     InvBC = 1./(Laplacian-p.kd^2);InvBC(1,1) = 0;
-    k = [0:p.N/2-1 0 -p.N/2+1:-1]';
+    k = [0:p.N/2-1 0 -p.N/2+1:-1]'; % the last even mode is zero
     dX = 1i*repmat(k',[p.N 1 2]);
     dY = 1i*repmat(k,[1 p.N 2]);
     % For the dealiased jacobian:
@@ -31,18 +31,17 @@ q_bt = .5*(q_hat(:,:,1) + q_hat(:,:,2));
 q_bc = .5*(q_hat(:,:,1) - q_hat(:,:,2));
 psi_bt = InvBT.*(q_bt - 0.5*hk(:,:)); % topography comes in here 
 psi_bc = InvBC.*(q_bc + 0.5*hk(:,:)); 
-psi_hat(:,:,2) = psi_bt-psi_bc;
 psi_hat(:,:,1) = psi_bt+psi_bc;
+psi_hat(:,:,2) = psi_bt-psi_bc;
 
 % calculate Ekman plus beta plus mean shear
 RHS = zeros([p.N p.N 2]);
 RHS(:,:,1) =-Ut*dX(:,:,1).*q_hat(:,:,1)-(p.kb^2 + Ut*p.kd^2)*dX(:,:,1).*psi_hat(:,:,1); 
-RHS(:,:,2) = Ut*dX(:,:,1).*q_hat(:,:,2)-(p.kb^2 - Ut*p.kd^2)*dX(:,:,1).*psi_hat(:,:,2) - (p.r*Laplacian.*psi_hat(:,:,2) - Ut*dX(:,:,1).*hk(:,:)); % dX.*hk can be stored to accelerate the code
+RHS(:,:,2) = Ut*dX(:,:,1).*q_hat(:,:,2)-(p.kb^2 - Ut*p.kd^2)*dX(:,:,1).*psi_hat(:,:,2) - p.r*Laplacian.*psi_hat(:,:,2); % find a bug here: - Ut*dX(:,:,1).*hk(:,:)
    
-% rhs_1_1 = -Ut*dX(:,:,1).*q_hat(:,:,1);
-% rhs_1_2 = -(p.kb^2 + Ut*p.kd^2)*dX(:,:,1).*psi_hat(:,:,1);
-% rhs_2_3 = p.r*Laplacian.*psi_hat(:,:,2);
-% rhs_2_4 = - Ut*dX(:,:,1).*hk(:,:);
+% rhs_2_1 = Ut*dX(:,:,1).*q_hat(:,:,2)-(p.kb^2 - Ut*p.kd^2)*dX(:,:,1).*psi_hat(:,:,2);
+% rhs_2_2 = - p.r*Laplacian.*psi_hat(:,:,2);
+% rhs_2_3 = Ut*dX(:,:,1).*hk(:,:);
 
 % For using a 3/2-rule dealiased jacobian:
     % physical space, 3/2 grid; factor of (9/4) scales fft
@@ -60,7 +59,7 @@ RHS(:,:,2) = Ut*dX(:,:,1).*q_hat(:,:,2)-(p.kb^2 - Ut*p.kd^2)*dX(:,:,1).*psi_hat(
     Q_hat(1:p.N/2+1,p.N+2:1.5*p.N,1) = (9/4)*q_hat(1:p.N/2+1,p.N/2+2:p.N,1);
     Q_hat(p.N+2:1.5*p.N,1:p.N/2+1,1) = (9/4)*q_hat(p.N/2+2:p.N,1:p.N/2+1,1);
     Q_hat(p.N+2:1.5*p.N,p.N+2:1.5*p.N,1) = (9/4)*q_hat(p.N/2+2:p.N,p.N/2+2:p.N,1);
-    q_hat_ = p.kd^2 * psi_hat(:,:,1) + hk;
+    q_hat_ = p.kd^2/2 * psi_hat(:,:,1) + hk; % found a bug here: p.kd^2 -> p.kd^2/2
     Q_hat(1:p.N/2+1,1:p.N/2+1,2) = (9/4)*q_hat_(1:p.N/2+1,1:p.N/2+1);
     Q_hat(1:p.N/2+1,p.N+2:1.5*p.N,2) = (9/4)*q_hat_(1:p.N/2+1,p.N/2+2:p.N);
     Q_hat(p.N+2:1.5*p.N,1:p.N/2+1,2) = (9/4)*q_hat_(p.N/2+2:p.N,1:p.N/2+1);
@@ -79,6 +78,18 @@ RHS(:,:,2) = Ut*dX(:,:,1).*q_hat(:,:,2)-(p.kb^2 - Ut*p.kd^2)*dX(:,:,1).*psi_hat(
     jaco_hat(1:p.N/2+1,p.N/2+2:p.N,:) = Jaco_hat(1:p.N/2+1,p.N+2:1.5*p.N,:);
     jaco_hat(p.N/2+2:p.N,1:p.N/2+1,:) = Jaco_hat(p.N+2:1.5*p.N,1:p.N/2+1,:);
     jaco_hat(p.N/2+2:p.N,p.N/2+2:p.N,:) = Jaco_hat(p.N+2:1.5*p.N,p.N+2:1.5*p.N,:);
+
+% % no dealiased Jacobian
+% Psi_hat = psi_hat;
+% Q_hat = q_hat;
+% Q_hat(:,:,2) = p.kd^2/2 * psi_hat(:,:,1) + hk;
+% % calculate u.gradq
+% u = real(ifft2(-dY.*Psi_hat));
+% v = real(ifft2( dX.*Psi_hat));
+% qx= real(ifft2( dX.*Q_hat));
+% qy= real(ifft2( dY.*Q_hat));
+% jaco_real = u.*qx+v.*qy;
+% jaco_hat = fft2(jaco_real);
 
 % Put it all together
 RHS = RHS - jaco_hat;
