@@ -23,23 +23,6 @@ def trunc2full(psi_k, K, cut):
 
     return psi_k_full
 
-def eigen2layer(K,cut,r1,r2,psi_k,tau_k):
-    N = psi_k.shape[-1]
-    psi1_k = np.zeros((K,K,N), dtype='complex')
-    psi2_k = np.zeros((K,K,N), dtype='complex')
-    kx = np.fft.fftfreq(K) * K
-    ky = np.fft.fftfreq(K) * K
-    for ikx,kx_value in enumerate(kx):
-        for iky,ky_value in enumerate(ky): 
-            if (kx_value == 0 and ky_value==0) or abs(kx_value) >= (K//2-cut) or abs(ky_value) >= (K//2-cut):  # Skip the case where k_mag is 0 and truncation
-                continue
-            eigenmat = np.array([r1[iky,ikx,:],r2[iky,ikx,:]]).T
-            layer = eigenmat @ np.array([psi_k[iky,ikx,:],tau_k[iky,ikx,:]])
-            psi1_k[iky,ikx,:] = layer[0,:] 
-            psi2_k[iky,ikx,:] = layer[1,:] 
-
-    return psi1_k, psi2_k
-
 
 def ene_spectrum(psi_hat, K, kd, topo):
     hk = np.fft.fft2(topo)

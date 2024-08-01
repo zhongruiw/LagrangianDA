@@ -1,0 +1,9 @@
+N = 16;
+k = [0:N/2 -N/2+1:-1]';
+[KX, KY] = meshgrid(k,k);
+cut = 4;
+cutRow = (N/2-cut+1):(N/2+cut+1);
+KX(cutRow,:) = [];
+KX(:,cutRow) = [];
+KY(cutRow,:) = [];
+KY(:,cutRow) = [];
