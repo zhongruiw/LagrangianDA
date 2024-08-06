@@ -48,11 +48,11 @@ for jj=1:p.N
             r = k-floor(k);
             KE(floor(k)+1) = KE(floor(k)+1)+(1-r)*(k^2)*(abs(psi_hat(ii,jj,1))^2+abs(psi_hat(ii,jj,2))^2);
             APE(floor(k)+1)= APE(floor(k)+1)+(1-r)*(.5*p.kd^2)*abs(psi_hat(ii,jj,1)-psi_hat(ii,jj,2))^2;
-            E(floor(k)+1)= E(floor(k)+1)+(1-r)*(abs(DX_psi_hat(ii,jj,1))^2+abs(DY_psi_hat(ii,jj,1))^2+abs(DX_psi_hat(ii,jj,2))^2+abs(DY_psi_hat(ii,jj,2))^2+(.5*p.kd^2)*(psi_hat(ii,jj,1)-psi_hat(ii,jj,2))^2);
+            E(floor(k)+1)= E(floor(k)+1)+(1-r)*(KE(floor(k)+1)+APE(floor(k)+1));
             ETP(floor(k)+1)= ETP(floor(k)+1)+(1-r)*(abs(q_hat(ii,jj,1))^2 + abs(q_hat(ii,jj,2))^2);
             KE(ceil(k)+1) = KE(ceil(k)+1)+r*(k^2)*(abs(psi_hat(ii,jj,1))^2+abs(psi_hat(ii,jj,2))^2);
             APE(ceil(k)+1)= APE(ceil(k)+1)+r*(.5*p.kd^2)*abs(psi_hat(ii,jj,1)-psi_hat(ii,jj,2))^2;
-            E(ceil(k)+1)= E(ceil(k)+1)+r*(abs(DX_psi_hat(ii,jj,1))^2+abs(DY_psi_hat(ii,jj,1))^2+abs(DX_psi_hat(ii,jj,2))^2+abs(DY_psi_hat(ii,jj,2))^2+(.5*p.kd^2)*(psi_hat(ii,jj,1)-psi_hat(ii,jj,2))^2);
+            E(ceil(k)+1)= E(ceil(k)+1)+r*(KE(ceil(k)+1)+APE(ceil(k)+1));
             ETP(ceil(k)+1)= ETP(ceil(k)+1)+r*(abs(q_hat(ii,jj,1))^2 + abs(q_hat(ii,jj,2))^2);
         end
     end

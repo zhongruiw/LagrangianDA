@@ -168,16 +168,16 @@ def run_OU(psi_k0, tau_k0, K, N, dt, r_cut, r1, r2, gamma, omega, f, sigma, styl
     Kx = np.fft.fftfreq(K) * K
     Ky = np.fft.fftfreq(K) * K
     
-    for ikx,kx_value in enumerate(Kx):
-        for iky,ky_value in enumerate(Ky):   
-            if (kx_value == 0 and ky_value==0):  # Skip the case where k_mag is 0 and truncation
-                continue
-            elif style == 'square' and abs(kx_value) > r_cut or abs(ky_value) > r_cut:
-                continue
-            elif style == 'circle' and (kx_value**2 + ky_value**2) > r_cut**2:
-                continue
-            elif kx_value > 0 or ((kx_value == 0 or kx_value==-K/2) and ky_value > 0): # half of modes
-                for i in range(1, N):
+    for i in range(1, N):
+        for ikx,kx_value in enumerate(Kx):
+            for iky,ky_value in enumerate(Ky):   
+                if (kx_value == 0 and ky_value==0):  # Skip the case where k_mag is 0 and truncation
+                    continue
+                elif style == 'square' and abs(kx_value) > r_cut or abs(ky_value) > r_cut:
+                    continue
+                elif style == 'circle' and (kx_value**2 + ky_value**2) > r_cut**2:
+                    continue
+                elif kx_value > 0 or ((kx_value == 0 or kx_value==-K/2) and ky_value > 0): # half of modes
                     noise1 = np.random.randn() + 1j * np.random.randn()
                     noise2 = np.random.randn() + 1j * np.random.randn()
                     if r1[iky,ikx,0].imag == 0:
@@ -190,13 +190,13 @@ def run_OU(psi_k0, tau_k0, K, N, dt, r_cut, r1, r2, gamma, omega, f, sigma, styl
                         tau_k1[-iky,-ikx] = psi_k1[iky,ikx].real - 1j * psi_k1[iky,ikx].imag
                         psi_k1[-iky,-ikx] = psi_k0[-iky,-ikx] + (-gamma[-iky,-ikx,0] + 1j * omega[-iky,-ikx,0]) * psi_k0[-iky,-ikx] * dt + f[-iky,-ikx,0] * dt + sigma[-iky,-ikx,0]/np.sqrt(2) * np.sqrt(dt) * noise2
                         tau_k1[iky,ikx] = psi_k1[-iky,-ikx].real - 1j * psi_k1[-iky,-ikx].imag
-                    psi_k0 = psi_k1
-                    tau_k0 = tau_k1
-                    
-                    if i % s_rate == 0:
-                        i_sub = int(i / s_rate)
-                        psi_k[:, :, i_sub] = psi_k1
-                        tau_k[:, :, i_sub] = tau_k1
+        psi_k0 = psi_k1
+        tau_k0 = tau_k1
+        
+        if i % s_rate == 0:
+            i_sub = int(i / s_rate)
+            psi_k[:, :, i_sub] = psi_k1
+            tau_k[:, :, i_sub] = tau_k1
 
     return psi_k, tau_k
 

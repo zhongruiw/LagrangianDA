@@ -24,51 +24,58 @@ def trunc2full(psi_k, K, cut):
     return psi_k_full
 
 
-def ene_spectrum(psi_hat, K, kd, topo):
+def ene_spectrum(psi_hat, K, kd, topo, r_cut):
+    '''
+    psi_hat should be of shape (N, K, K, 2)
+    '''
+    N = psi_hat.shape[0]
     hk = np.fft.fft2(topo)
     K_half = K // 2
-    E_mode = np.zeros((K_half + 1,2))
-    KE = np.zeros(K_half + 1)
+    E_mode = np.zeros((N,K_half + 1,2))
+    KE = np.zeros((N,K_half + 1))
     APE = np.zeros_like(KE)
     E = np.zeros_like(KE)
     ETP = np.zeros_like(KE)
     kx = np.fft.fftfreq(K) * K
     ky = np.fft.fftfreq(K) * K
     KX, KY = np.meshgrid(kx, ky)
-    
-    DY_psi_hat = psi_hat * (1j) * KY[:,:,None]
-    DX_psi_hat = psi_hat * (1j) * KX[:,:,None]
-    Laplacian = ((1j) * KY)**2 + ((1j) * KX)**2
-    q_hat = np.zeros((K,K,2), dtype=complex)
-    q_hat[:,:,0] = Laplacian * psi_hat[:,:,0] + kd**2/2*(psi_hat[:,:,1]-psi_hat[:,:,0])
-    q_hat[:,:,1] = Laplacian * psi_hat[:,:,1] + kd**2/2*(psi_hat[:,:,0]-psi_hat[:,:,1]) + hk
-    
+
     for jj in range(K):
         for ii in range(K):
             k = np.sqrt(KX[ii, jj]**2 + KY[ii, jj]**2)
-            if np.ceil(k) <= K_half:
+            if np.ceil(k) <= K_half and np.ceil(k) <= r_cut:
                 r = k - np.floor(k)
                 floor_k = int(np.floor(k))
                 ceil_k = int(np.ceil(k))
 
-                KE[floor_k] += (1 - r) * (k**2) * (np.abs(psi_hat[ii, jj, 0])**2 + np.abs(psi_hat[ii, jj, 1])**2)
-                APE[floor_k] += (1 - r) * (.5 * kd**2) * np.abs(psi_hat[ii, jj, 0] - psi_hat[ii, jj, 1])**2
-                E[floor_k] += (1 - r) * (np.abs(DX_psi_hat[ii, jj, 0])**2 + np.abs(DY_psi_hat[ii, jj, 0])**2 + np.abs(DX_psi_hat[ii, jj, 1])**2 + np.abs(DY_psi_hat[ii, jj, 1])**2 + (.5 * kd**2) * np.abs(psi_hat[ii, jj, 0] - psi_hat[ii, jj, 1])**2)
-                ETP[floor_k] += (1 - r) * (np.abs(q_hat[ii, jj, 0])**2 + np.abs(q_hat[ii, jj, 1])**2)
-                E_mode[floor_k, :] += (1 - r) * (np.abs(psi_hat[ii, jj, :])**2)                                
+                q_hat = np.zeros((N,2), dtype=complex)
+                q_hat[:, 0] = -k**2 * psi_hat[:, ii, jj, 0] + kd**2/2*(psi_hat[:, ii, jj, 1]-psi_hat[:, ii, jj, 0])
+                q_hat[:, 1] = -k**2 * psi_hat[:, ii, jj, 1] + kd**2/2*(psi_hat[:, ii, jj, 0]-psi_hat[:, ii, jj, 1]) + hk[ii, jj]
+
+                KE[:, floor_k] += (1 - r) * (k**2) * (np.abs(psi_hat[:, ii, jj, 0])**2 + np.abs(psi_hat[:, ii, jj, 1])**2)
+                APE[:, floor_k] += (1 - r) * (.5 * kd**2) * np.abs(psi_hat[:, ii, jj, 0] - psi_hat[:, ii, jj, 1])**2
+                E[:, floor_k] += (1 - r) * (KE[:, floor_k] + APE[:, floor_k])
+                ETP[:, floor_k] += (1 - r) * (np.abs(q_hat[:, 0])**2 + np.abs(q_hat[:, 1])**2)
+                E_mode[:, floor_k, :] += (1 - r) * (np.abs(psi_hat[:, ii, jj, :])**2)                                
                 
                 if ceil_k != floor_k:  # Only update if ceil(k) and floor(k) are different
-                    KE[ceil_k] += r * (k**2) * (np.abs(psi_hat[ii, jj, 0])**2 + np.abs(psi_hat[ii, jj, 1])**2)
-                    APE[ceil_k] += r * (.5 * kd**2) * np.abs(psi_hat[ii, jj, 0] - psi_hat[ii, jj, 1])**2
-                    E[ceil_k] += r * (np.abs(DX_psi_hat[ii, jj, 0])**2 + np.abs(DY_psi_hat[ii, jj, 0])**2 + np.abs(DX_psi_hat[ii, jj, 1])**2 + np.abs(DY_psi_hat[ii, jj, 1])**2 + (.5 * kd**2) * np.abs(psi_hat[ii, jj, 0] - psi_hat[ii, jj, 1])**2)
-                    ETP[ceil_k] += r * (np.abs(q_hat[ii, jj, 0])**2 + np.abs(q_hat[ii, jj, 1])**2)
-                    E_mode[ceil_k, :] += r * (np.abs(psi_hat[ii, jj, :])**2)                                
+                    KE[:, ceil_k] += r * (k**2) * (np.abs(psi_hat[:, ii, jj, 0])**2 + np.abs(psi_hat[:, ii, jj, 1])**2)
+                    APE[:, ceil_k] += r * (.5 * kd**2) * np.abs(psi_hat[:, ii, jj, 0] - psi_hat[:, ii, jj, 1])**2
+                    E[:, ceil_k] += r * (KE[:, ceil_k] + APE[:, ceil_k])
+                    ETP[:, ceil_k] += r * (np.abs(q_hat[:, 0])**2 + np.abs(q_hat[:, 1])**2)
+                    E_mode[:, ceil_k, :] += r * (np.abs(psi_hat[:, ii, jj, :])**2)                                
 
     KE = .5 * KE / (K**4)
     APE = .5 * APE / (K**4)
     E = .5 * E / (K**4)
     ETP = .5 * ETP / (K**4)
     E_mode = E_mode / (K**4)
+
+    KE = np.mean(KE, axis=0)
+    APE = np.mean(APE, axis=0)
+    E = np.mean(E, axis=0)
+    ETP = np.mean(ETP, axis=0)
+    E_mode = np.mean(E_mode, axis=0)
     
     return KE, APE, E, ETP, E_mode
     

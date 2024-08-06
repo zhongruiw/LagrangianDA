@@ -43,53 +43,75 @@ RHS(:,:,2) = Ut*dX(:,:,1).*q_hat(:,:,2)-(p.kb^2 - Ut*p.kd^2)*dX(:,:,1).*psi_hat(
 % rhs_2_2 = - p.r*Laplacian.*psi_hat(:,:,2);
 % rhs_2_3 = Ut*dX(:,:,1).*hk(:,:);
 
-% For using a 3/2-rule dealiased jacobian:
-    % physical space, 3/2 grid; factor of (9/4) scales fft
-    Psi_hat = zeros([1.5*p.N 1.5*p.N 2]);
-    Psi_hat(1:p.N/2+1,1:p.N/2+1,:) = (9/4)*psi_hat(1:p.N/2+1,1:p.N/2+1,:);
-    Psi_hat(1:p.N/2+1,p.N+2:1.5*p.N,:) = (9/4)*psi_hat(1:p.N/2+1,p.N/2+2:p.N,:);
-    Psi_hat(p.N+2:1.5*p.N,1:p.N/2+1,:) = (9/4)*psi_hat(p.N/2+2:p.N,1:p.N/2+1,:);
-    Psi_hat(p.N+2:1.5*p.N,p.N+2:1.5*p.N,:) = (9/4)*psi_hat(p.N/2+2:p.N,p.N/2+2:p.N,:);
-    Q_hat = zeros([1.5*p.N 1.5*p.N 2]);
-    Q_hat(1:p.N/2+1,1:p.N/2+1,:) = (9/4)*q_hat(1:p.N/2+1,1:p.N/2+1,:);
-    Q_hat(1:p.N/2+1,p.N+2:1.5*p.N,:) = (9/4)*q_hat(1:p.N/2+1,p.N/2+2:p.N,:);
-    Q_hat(p.N+2:1.5*p.N,1:p.N/2+1,:) = (9/4)*q_hat(p.N/2+2:p.N,1:p.N/2+1,:);
-    Q_hat(p.N+2:1.5*p.N,p.N+2:1.5*p.N,:) = (9/4)*q_hat(p.N/2+2:p.N,p.N/2+2:p.N,:);
-    % Q_hat(1:p.N/2+1,1:p.N/2+1,1) = (9/4)*q_hat(1:p.N/2+1,1:p.N/2+1,1);
-    % Q_hat(1:p.N/2+1,p.N+2:1.5*p.N,1) = (9/4)*q_hat(1:p.N/2+1,p.N/2+2:p.N,1);
-    % Q_hat(p.N+2:1.5*p.N,1:p.N/2+1,1) = (9/4)*q_hat(p.N/2+2:p.N,1:p.N/2+1,1);
-    % Q_hat(p.N+2:1.5*p.N,p.N+2:1.5*p.N,1) = (9/4)*q_hat(p.N/2+2:p.N,p.N/2+2:p.N,1);
-    % q_hat_ = p.kd^2/2 * psi_hat(:,:,1) + hk; % found a bug here: p.kd^2 -> p.kd^2/2
-    % Q_hat(1:p.N/2+1,1:p.N/2+1,2) = (9/4)*q_hat_(1:p.N/2+1,1:p.N/2+1);
-    % Q_hat(1:p.N/2+1,p.N+2:1.5*p.N,2) = (9/4)*q_hat_(1:p.N/2+1,p.N/2+2:p.N);
-    % Q_hat(p.N+2:1.5*p.N,1:p.N/2+1,2) = (9/4)*q_hat_(p.N/2+2:p.N,1:p.N/2+1);
-    % Q_hat(p.N+2:1.5*p.N,p.N+2:1.5*p.N,2) = (9/4)*q_hat_(p.N/2+2:p.N,p.N/2+2:p.N);
-    % calculate u.gradq on 3/2 grid
-    u = real(ifft2(-DY.*Psi_hat));
-    v = real(ifft2( DX.*Psi_hat));
-    qx= real(ifft2( DX.*Q_hat));
-    qy= real(ifft2( DY.*Q_hat));
-    jaco_real = u.*qx+v.*qy;
-    % fft, 3/2 grid; factor of (4/9) scales fft
-    Jaco_hat = (4/9)*fft2(jaco_real);
-    % reduce to normal grid
-    jaco_hat = zeros([p.N p.N 2]);
-    jaco_hat(1:p.N/2+1,1:p.N/2+1,:) = Jaco_hat(1:p.N/2+1,1:p.N/2+1,:);
-    jaco_hat(1:p.N/2+1,p.N/2+2:p.N,:) = Jaco_hat(1:p.N/2+1,p.N+2:1.5*p.N,:);
-    jaco_hat(p.N/2+2:p.N,1:p.N/2+1,:) = Jaco_hat(p.N+2:1.5*p.N,1:p.N/2+1,:);
-    jaco_hat(p.N/2+2:p.N,p.N/2+2:p.N,:) = Jaco_hat(p.N+2:1.5*p.N,p.N+2:1.5*p.N,:);
-
-% % no dealiased Jacobian
-% Psi_hat = psi_hat;
-% Q_hat = q_hat;
-% Q_hat(:,:,2) = p.kd^2/2 * psi_hat(:,:,1) + hk;
-% % calculate u.gradq
-% u = real(ifft2(-dY.*Psi_hat));
-% v = real(ifft2( dX.*Psi_hat));
-% qx= real(ifft2( dX.*Q_hat));
-% qy= real(ifft2( dY.*Q_hat));
-% jaco_real = u.*qx+v.*qy;
-% jaco_hat = fft2(jaco_real);
-
-% Put it all together
-RHS = RHS - jaco_hat;
+% % For using a 3/2-rule dealiased jacobian:
+%     % physical space, 3/2 grid; factor of (9/4) scales fft
+%     Psi_hat = zeros([1.5*p.N 1.5*p.N 2]);
+%     Psi_hat(1:p.N/2+1,1:p.N/2+1,:) = (9/4)*psi_hat(1:p.N/2+1,1:p.N/2+1,:);
+%     Psi_hat(1:p.N/2+1,p.N+2:1.5*p.N,:) = (9/4)*psi_hat(1:p.N/2+1,p.N/2+2:p.N,:);
+%     Psi_hat(p.N+2:1.5*p.N,1:p.N/2+1,:) = (9/4)*psi_hat(p.N/2+2:p.N,1:p.N/2+1,:);
+%     Psi_hat(p.N+2:1.5*p.N,p.N+2:1.5*p.N,:) = (9/4)*psi_hat(p.N/2+2:p.N,p.N/2+2:p.N,:);
+%     Q_hat = zeros([1.5*p.N 1.5*p.N 2]);
+%     Q_hat(1:p.N/2+1,1:p.N/2+1,:) = (9/4)*q_hat(1:p.N/2+1,1:p.N/2+1,:);
+%     Q_hat(1:p.N/2+1,p.N+2:1.5*p.N,:) = (9/4)*q_hat(1:p.N/2+1,p.N/2+2:p.N,:);
+%     Q_hat(p.N+2:1.5*p.N,1:p.N/2+1,:) = (9/4)*q_hat(p.N/2+2:p.N,1:p.N/2+1,:);
+%     Q_hat(p.N+2:1.5*p.N,p.N+2:1.5*p.N,:) = (9/4)*q_hat(p.N/2+2:p.N,p.N/2+2:p.N,:);
+%     % Q_hat(1:p.N/2+1,1:p.N/2+1,1) = (9/4)*q_hat(1:p.N/2+1,1:p.N/2+1,1);
+%     % Q_hat(1:p.N/2+1,p.N+2:1.5*p.N,1) = (9/4)*q_hat(1:p.N/2+1,p.N/2+2:p.N,1);
+%     % Q_hat(p.N+2:1.5*p.N,1:p.N/2+1,1) = (9/4)*q_hat(p.N/2+2:p.N,1:p.N/2+1,1);
+%     % Q_hat(p.N+2:1.5*p.N,p.N+2:1.5*p.N,1) = (9/4)*q_hat(p.N/2+2:p.N,p.N/2+2:p.N,1);
+%     % q_hat_ = p.kd^2/2 * psi_hat(:,:,1) + hk; % found a bug here: p.kd^2 -> p.kd^2/2
+%     % Q_hat(1:p.N/2+1,1:p.N/2+1,2) = (9/4)*q_hat_(1:p.N/2+1,1:p.N/2+1);
+%     % Q_hat(1:p.N/2+1,p.N+2:1.5*p.N,2) = (9/4)*q_hat_(1:p.N/2+1,p.N/2+2:p.N);
+%     % Q_hat(p.N+2:1.5*p.N,1:p.N/2+1,2) = (9/4)*q_hat_(p.N/2+2:p.N,1:p.N/2+1);
+%     % Q_hat(p.N+2:1.5*p.N,p.N+2:1.5*p.N,2) = (9/4)*q_hat_(p.N/2+2:p.N,p.N/2+2:p.N);
+%     % calculate u.gradq on 3/2 grid
+%     u = real(ifft2(-DY.*Psi_hat));
+%     v = real(ifft2( DX.*Psi_hat));
+%     qx= real(ifft2( DX.*Q_hat));
+%     qy= real(ifft2( DY.*Q_hat));
+%     jaco_real = u.*qx+v.*qy;
+%     % fft, 3/2 grid; factor of (4/9) scales fft
+%     Jaco_hat = (4/9)*fft2(jaco_real);
+%     % reduce to normal grid
+%     jaco_hat = zeros([p.N p.N 2]);
+%     jaco_hat(1:p.N/2+1,1:p.N/2+1,:) = Jaco_hat(1:p.N/2+1,1:p.N/2+1,:);
+%     jaco_hat(1:p.N/2+1,p.N/2+2:p.N,:) = Jaco_hat(1:p.N/2+1,p.N+2:1.5*p.N,:);
+%     jaco_hat(p.N/2+2:p.N,1:p.N/2+1,:) = Jaco_hat(p.N+2:1.5*p.N,1:p.N/2+1,:);
+%     jaco_hat(p.N/2+2:p.N,p.N/2+2:p.N,:) = Jaco_hat(p.N+2:1.5*p.N,p.N+2:1.5*p.N,:);
+% 
+%     % Q_hat = zeros([1.5*p.N 1.5*p.N 2]);
+%     % Q_hat(1:p.N/2+1,1:p.N/2+1,1) = (9/4)*q_hat(1:p.N/2+1,1:p.N/2+1,1);
+%     % Q_hat(1:p.N/2+1,p.N+2:1.5*p.N,1) = (9/4)*q_hat(1:p.N/2+1,p.N/2+2:p.N,1);
+%     % Q_hat(p.N+2:1.5*p.N,1:p.N/2+1,1) = (9/4)*q_hat(p.N/2+2:p.N,1:p.N/2+1,1);
+%     % Q_hat(p.N+2:1.5*p.N,p.N+2:1.5*p.N,1) = (9/4)*q_hat(p.N/2+2:p.N,p.N/2+2:p.N,1);
+%     % q_hat_ = p.kd^2/2 * psi_hat(:,:,1) + hk; % found a bug here: p.kd^2 -> p.kd^2/2
+%     % Q_hat(1:p.N/2+1,1:p.N/2+1,2) = (9/4)*q_hat_(1:p.N/2+1,1:p.N/2+1);
+%     % Q_hat(1:p.N/2+1,p.N+2:1.5*p.N,2) = (9/4)*q_hat_(1:p.N/2+1,p.N/2+2:p.N);
+%     % Q_hat(p.N+2:1.5*p.N,1:p.N/2+1,2) = (9/4)*q_hat_(p.N/2+2:p.N,1:p.N/2+1);
+%     % Q_hat(p.N+2:1.5*p.N,p.N+2:1.5*p.N,2) = (9/4)*q_hat_(p.N/2+2:p.N,p.N/2+2:p.N);
+%     % qx= real(ifft2( DX.*Q_hat));
+%     % qy= real(ifft2( DY.*Q_hat));
+%     % jaco_real = u.*qx+v.*qy;
+%     % % fft, 3/2 grid; factor of (4/9) scales fft
+%     % Jaco_hat = (4/9)*fft2(jaco_real);
+%     % % reduce to normal grid
+%     % jaco_hat_cg = zeros([p.N p.N 2]);
+%     % jaco_hat_cg(1:p.N/2+1,1:p.N/2+1,:) = Jaco_hat(1:p.N/2+1,1:p.N/2+1,:);
+%     % jaco_hat_cg(1:p.N/2+1,p.N/2+2:p.N,:) = Jaco_hat(1:p.N/2+1,p.N+2:1.5*p.N,:);
+%     % jaco_hat_cg(p.N/2+2:p.N,1:p.N/2+1,:) = Jaco_hat(p.N+2:1.5*p.N,1:p.N/2+1,:);
+%     % jaco_hat_cg(p.N/2+2:p.N,p.N/2+2:p.N,:) = Jaco_hat(p.N+2:1.5*p.N,p.N+2:1.5*p.N,:);
+% 
+% % % no dealiased Jacobian
+% % Psi_hat = psi_hat;
+% % Q_hat = q_hat;
+% % Q_hat(:,:,2) = p.kd^2/2 * psi_hat(:,:,1) + hk;
+% % % calculate u.gradq
+% % u = real(ifft2(-dY.*Psi_hat));
+% % v = real(ifft2( dX.*Psi_hat));
+% % qx= real(ifft2( dX.*Q_hat));
+% % qy= real(ifft2( dY.*Q_hat));
+% % jaco_real = u.*qx+v.*qy;
+% % jaco_hat = fft2(jaco_real);
+% 
+% % Put it all together
+% RHS = RHS - jaco_hat;
