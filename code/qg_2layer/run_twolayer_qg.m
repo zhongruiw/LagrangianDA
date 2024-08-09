@@ -5,12 +5,12 @@
 % Set simulation parameters; ocean regime
 N = 256;       % Number of points in each direction
 dt = 5E-4;     % initial time step size
-Nt = 1.1* 1E4;      % Number of time steps
-qlim = 1.5E5;  % if any q > qlim, simulation stops
+Nt = 6*1E4;      % Number of time steps
+qlim = 1E4;  % if any q > qlim, simulation stops
 
 % Set physical parameters
-kd = 25;       % Nondimensional deformation wavenumber
-kb = 0;        % Nondimensional beta wavenumber, beta = kb^2 
+kd = 10;       % Nondimensional deformation wavenumber
+kb = sqrt(111);        % Nondimensional beta wavenumber, beta = kb^2 
 U = 1;         % zonal shear flow
 r = 8;         % Nondimensional Ekman friction coefficient
 nu = 5E-15;    % Coefficient of biharmonic vorticity diffusion
@@ -116,11 +116,11 @@ for ii=1:Nt
         break
     end
 end
-if any(isnan(q(:)))
-    fprintf('NaN\n')
-else
-    save('QG_DATA.mat','ii','countDiag','dt','tol','params','T','ke','ape','vb','utz', 'qp');
-end
+% if any(isnan(q(:)))
+%     fprintf('NaN\n')
+% else
+%     save('QG_DATA.mat','ii','countDiag','dt','tol','params','T','ke','ape','vb','utz', 'qp');
+% end
 
 h = figure;
 subplot(1,2,1)

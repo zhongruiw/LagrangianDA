@@ -61,6 +61,6 @@ RHS(:,:,2) = p.U*dX(:,:,1).*q_hat(:,:,2)-(p.kb^2 - p.U*p.kd^2)*dX(:,:,1).*psi_ha
     jaco_hat(1:p.N/2+1,p.N/2+2:p.N,:) = Jaco_hat(1:p.N/2+1,p.N+2:1.5*p.N,:);
     jaco_hat(p.N/2+2:p.N,1:p.N/2+1,:) = Jaco_hat(p.N+2:1.5*p.N,1:p.N/2+1,:);
     jaco_hat(p.N/2+2:p.N,p.N/2+2:p.N,:) = Jaco_hat(p.N+2:1.5*p.N,p.N+2:1.5*p.N,:);
-    
+
 % Put it all together
 RHS = RHS - jaco_hat;

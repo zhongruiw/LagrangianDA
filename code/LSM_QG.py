@@ -64,7 +64,7 @@ def ACF(data, gamma, omega):
     return np.exp(-gamma*data) * np.cos(omega*data)
 
 
-def calibrate_OU(r1, r2, psi1_hat_t, psi2_hat_t, K, dt, Lag, r_cut, style):
+def calibrate_OU(r1, psi_k_t, tau_k_t, K, dt, Lag, r_cut, style):
     '''
     calibration of complex OU process modeling two eigenmodes
     - Lag: int, lag for computing the ACF
@@ -88,61 +88,52 @@ def calibrate_OU(r1, r2, psi1_hat_t, psi2_hat_t, K, dt, Lag, r_cut, style):
             elif style == 'circle' and (kx_value**2 + ky_value**2) > r_cut**2:
                 continue
             else:
-                eigenmat_inv = np.linalg.inv(np.array([r1[iky,ikx,:],r2[iky,ikx,:]]).T)
-                eigenmode = eigenmat_inv @ np.array([psi1_hat_t[iky,ikx,:],psi2_hat_t[iky,ikx,:]])
-                psi1_hat = eigenmode[0,:] 
-                psi2_hat = eigenmode[1,:]
-                acf_psi1 = acf(np.real(psi1_hat), nlags=Lag, fft=True) 
-                acf_psi2 = acf(np.real(psi2_hat), nlags=Lag, fft=True) 
-                ccf_psi1 = -ccf(np.real(psi1_hat), np.imag(psi1_hat), adjusted=False)[:Lag+1]
-                ccf_psi2 = -ccf(np.real(psi2_hat), np.imag(psi2_hat), adjusted=False)[:Lag+1]
+                psi_k = psi_k_t[iky, ikx, :] 
+                tau_k = tau_k_t[iky, ikx, :]
+                acf_psi = acf(np.real(psi_k), nlags=Lag, fft=True) 
+                acf_tau = acf(np.real(tau_k), nlags=Lag, fft=True) 
+                ccf_psi = -ccf(np.real(psi_k), np.imag(psi_k), adjusted=False)[:Lag+1]
+                ccf_tau = -ccf(np.real(tau_k), np.imag(tau_k), adjusted=False)[:Lag+1]
 
-                # Fitting the cross-correlation function
                 x0 = [0.5, 0.5]
-                x1, _ = curve_fit(ACF, tt, acf_psi1, p0=x0, check_finite=True, maxfev=2000)
-                x1_, _ = curve_fit(CCF, tt, ccf_psi1, p0=x0, check_finite=True, maxfev=2000)
-                # Estimated values
+                x1, _ = curve_fit(ACF, tt, acf_psi, p0=x0, check_finite=True, maxfev=2000)
+                x1_, _ = curve_fit(CCF, tt, ccf_psi, p0=x0, check_finite=True, maxfev=2000)
                 gamma1_est = x1[0]
                 omega1_est = x1[1]
                 omega1_est_ccf = x1_[1]
-                m1 = np.mean(psi1_hat)
-                E1 = np.var(psi1_hat)
-                T1 = gamma1_est / (gamma1_est**2 + omega1_est**2)
-                theta1 = omega1_est / (gamma1_est**2 + omega1_est**2)
-                f1_est = m1 * (T1 - 1j*theta1) / (T1**2 + theta1**2)
-                sigma1_est = np.sqrt(2*E1*T1 / (T1**2 + theta1**2))
-                gamma_est[iky,ikx,0] = gamma1_est; omega_est[iky,ikx,0] = omega1_est; f_est[iky,ikx,0] = f1_est; sigma_est[iky,ikx,0] = sigma1_est;
+                gamma_est[iky,ikx,0] = gamma1_est; omega_est[iky,ikx,0] = omega1_est#; f_est[iky,ikx,0] = f1_est; sigma_est[iky,ikx,0] = sigma1_est;
                 omega_est_ccf[iky,ikx,0] = omega1_est_ccf;
 
-                x2, _ = curve_fit(ACF, tt, acf_psi2, p0=x0, check_finite=True, maxfev=2000)
-                x2_, _ = curve_fit(CCF, tt, ccf_psi2, p0=x0, check_finite=True, maxfev=2000)
-                # Estimated values
+                x2, _ = curve_fit(ACF, tt, acf_tau, p0=x0, check_finite=True, maxfev=2000)
+                x2_, _ = curve_fit(CCF, tt, ccf_tau, p0=x0, check_finite=True, maxfev=2000)
                 gamma2_est = x2[0]
                 omega2_est = x2[1]
                 omega2_est_ccf = x2_[1]
-                m2 = np.mean(psi2_hat)
-                E2 = np.var(psi2_hat)
-                T2 = gamma2_est / (gamma2_est**2 + omega2_est**2)
-                theta2 = omega2_est / (gamma2_est**2 + omega2_est**2)
-                f2_est = m2 * (T2 - 1j*theta2) / (T2**2 + theta2**2)
-                sigma2_est = np.sqrt(2*E2*T2 / (T2**2 + theta2**2))
-                gamma_est[iky,ikx,1] = gamma2_est; omega_est[iky,ikx,1] = omega2_est; f_est[iky,ikx,1] = f2_est; sigma_est[iky,ikx,1] = sigma2_est;
+                gamma_est[iky,ikx,1] = gamma2_est; omega_est[iky,ikx,1] = omega2_est#; f_est[iky,ikx,1] = f2_est; sigma_est[iky,ikx,1] = sigma2_est;
                 omega_est_ccf[iky,ikx,1] = omega2_est_ccf;
             
     # ensure conjugate symmetry by average
     gamma_est = avg_conj_symm(gamma_est, r1).real    
     omega_est_ccf = (avg_conj_symm(1j * omega_est_ccf, r1) / 1j).real
-    f_est = avg_conj_symm(f_est, r1)
-    sigma_est = avg_conj_symm(sigma_est, r1).real 
-
     # calibrate the sign of ACF-estimated omega_k according to CCF-estimated omega_k
     sign1 = np.sign(omega_est)
     sign2 = np.sign(omega_est_ccf)
     sign2_corrected = np.where((sign1 == 0) & (sign2 == 0), 0, sign2)
     omega_est_ca = np.abs(omega_est) * sign2_corrected
-
     # ensure conjugate symmetry by average
     omega_est_ca = (avg_conj_symm(1j * omega_est_ca, r1) / 1j).real
+
+    m1 = np.mean(psi_k_t, axis=2)
+    E1 = np.var(psi_k_t, axis=2)
+    f_est[:, :, 0] = m1 * (gamma_est[:, :, 0] - 1j * omega_est_ca[:, :, 0]) 
+    sigma_est[:, :, 0] = np.sqrt(2*E1*gamma_est[:, :, 0])
+    m2 = np.mean(tau_k_t, axis=2)
+    E2 = np.var(tau_k_t, axis=2)
+    f_est[:, :, 1] = m2 * (gamma_est[:, :, 1] - 1j * omega_est_ca[:, :, 1]) 
+    sigma_est[:, :, 1] = np.sqrt(2*E2*gamma_est[:, :, 1])
+
+    f_est = avg_conj_symm(f_est, r1)
+    sigma_est = avg_conj_symm(sigma_est, r1).real 
 
     est_params = {
         'gamma': gamma_est,
