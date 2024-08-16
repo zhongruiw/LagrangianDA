@@ -1,5 +1,5 @@
 import numpy as np
-from numba import jit
+# from numba import jit
 from mode_truc import truncate, inv_truncate
 
 
