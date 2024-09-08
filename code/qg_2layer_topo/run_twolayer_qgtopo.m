@@ -4,8 +4,8 @@ rng(2024);
 
 % Set simulation parameters; ocean regime
 N = 128;       % Number of points in each direction
-dt = 5E-4;     % initial time step size
-Nt = 22*1E4;      % Number of time steps
+dt = 2E-3;     % initial time step size
+Nt = 205*1E3;      % Number of time steps
 qlim = 1E4;  % if any q > qlim, simulation stops
 s_rate = 8;   % subsampling rate
 cut = 48;      % number of truncated modes = cut*2+1
@@ -38,7 +38,11 @@ t = 0;
 % Initialize topography 
 dx=2*pi/N;
 [X,Y]=meshgrid(-pi:dx:pi-dx,-pi:dx:pi-dx);
-topo = H * (cos(X)+2*cos(2*Y));
+mu = [1, 1.5];
+sigma = [.2 0.0; 0.0 .2];
+F = mvnpdf([X(:) Y(:)], mu, sigma);
+F = reshape(F, size(X));
+topo = H * (cos(X)+2*cos(2*Y) + 4*F);
 topo = topo-mean(mean(topo));
 global hk 
 hk = fft2(topo);
@@ -240,7 +244,7 @@ qp_t = circshift(qp_t, [0, N/2, 0, 0]);
 if any(isnan(q(:)))
     fprintf('NaN\n')
 else
-    save('QG_DATA_topo40_nu1e-12_beta111_K128_dt5e-4_subs.mat','ii','countDiag','dt','tol','params','T','ke','ape','ene','etp','vb','utz', 'qp','topo','psi_1_t','psi_2_t','s_rate','cut','psi_1_t_fine','-v7.3'); 
+    save('QG_DATA_topo40_nu1e-12_beta111_K128_dt2e-3_subs.mat','ii','countDiag','dt','tol','params','T','ke','ape','ene','etp','vb','utz', 'qp','topo','psi_1_t','psi_2_t','s_rate','cut','psi_1_t_fine','-v7.3'); 
 end
 
 h5 = figure(5);
@@ -255,7 +259,7 @@ for i = 1:9
     xlabel('x'); ylabel('y');
     % set(gca,'fontsize',12)
 end
-print(h5, 'upper_topo40_nu1e-12_beta111_K128_dt5e-4_snap.png', '-dpng', '-r150') 
+print(h5, 'upper_topo40_nu1e-12_beta111_K128_dt2e-3_snap.png', '-dpng', '-r150') 
 
 
 h6 = figure(6);
@@ -270,7 +274,7 @@ for i = 1:9
     xlabel('x'); ylabel('y');
     % set(gca,'fontsize',12)
 end
-print(h6, 'lower_topo40_nu1e-12_beta111_K128_dt5e-4_snap.png', '-dpng', '-r150') 
+print(h6, 'lower_topo40_nu1e-12_beta111_K128_dt2e-3_snap.png', '-dpng', '-r150') 
 
 % t=20;
 % t=10;
@@ -288,7 +292,7 @@ caxis([-250 250]);
 colorbar;  % need ot add topography here if 'relative PV' in integration is used
 title(['lower layer mode at t = ', num2str(t)]);
 xlabel('x'); ylabel('y');
-print(h, 'mode_topo40_nu1e-12_beta111_K128_dt5e-4.png', '-dpng', '-r150') 
+print(h, 'mode_topo40_nu1e-12_beta111_K128_dt2e-3.png', '-dpng', '-r150') 
 
 h1 = figure(2);
 set(h1, 'Position', [20, 20, 500, 300]); % Set the figure size ([left, bottom, width, height])
@@ -298,7 +302,7 @@ title('kinetic energy spectrum'); xlabel('wavenumber');
 subplot(1,2,2)
 loglog([0:N/2],mean(ape(:,end-100:end),2),'.-', 'LineWidth',1); hold on;
 title('potential energy spectrum'); xlabel('wavenumber');
-print(h1, 'energy_topo40_nu1e-12_beta111_K128_dt5e-4.png', '-dpng', '-r150')
+print(h1, 'energy_topo40_nu1e-12_beta111_K128_dt2e-3.png', '-dpng', '-r150')
 
 h3 = figure(3);
 set(h3, 'Position', [20, 20, 500, 300]); % Set the figure size ([left, bottom, width, height])
@@ -308,7 +312,7 @@ title('energy spectrum'); xlabel('wavenumber');
 subplot(1,2,2)
 loglog([0:N/2],mean(etp(:,end-100:end),2),'.-', 'LineWidth',1); hold on;
 title('enstrophy spectrum'); xlabel('wavenumber');
-print(h3, 'mode_ene_ens_topo40_nu1e-12_beta111_K128_dt5e-4.png', '-dpng', '-r150')
+print(h3, 'mode_ene_ens_topo40_nu1e-12_beta111_K128_dt2e-3.png', '-dpng', '-r150')
 
 h4 = figure(4);
 set(h4, 'Position', [20, 20, 500, 300]); % Set the figure size ([left, bottom, width, height])
@@ -318,4 +322,4 @@ title('energy series'); xlabel('time');
 subplot(1,2,2)
 plot([1:size(etp_t,2)],etp_t,'.-', 'LineWidth',1); hold on;
 title('enstrophy series'); xlabel('time');
-print(h4, 'series_ene_ens_topo40_nu1e-12_beta111_K128_dt5e-4.png', '-dpng', '-r150')
+print(h4, 'series_ene_ens_topo40_nu1e-12_beta111_K128_dt2e-3.png', '-dpng', '-r150')

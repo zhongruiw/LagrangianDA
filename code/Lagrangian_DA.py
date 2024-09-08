@@ -105,35 +105,64 @@ def get_A_CG(K, KX, KY, k_index_map, kd, beta, kappa, nu, U, psi1_hat, h_hat):
     return A0, a0, A1, a1
 
 
-def forward_OU(N, N_chunk, K, dt, x, y, r1, r2, mu0, a0, a1, R0, InvBoB, Sigma_u, mu_t, R_t, KX, KY):
-    # leverage the diagonal matrix property for acceleration
-    a1_diag = a1.diagonal()
-    Sigma_u_diag = Sigma_u.diagonal()
-
-    for i in range(1, N):
-        i_chunk = (i-1) % N_chunk
-        if i_chunk == 0:
-            A1_t = get_A_OU(x[i-1:i-1+N_chunk, :], y[i-1:i-1+N_chunk, :], K, r1, r2, KX, KY)
-        
-        x0 = x[i - 1, :]
-        y0 = y[i - 1, :]
-        x1 = x[i, :]
-        y1 = y[i, :]
-        x_diff = np.mod(x1 - x0 + np.pi, 2 * np.pi) - np.pi # consider periodic boundary conditions
-        y_diff = np.mod(y1 - y0 + np.pi, 2 * np.pi) - np.pi # consider periodic boundary conditions
-
-        # precompute
-        A1 = A1_t[i_chunk, :, :]
-        R0_A1_H = R0 @ A1.conj().T
-        Sigma_u_diag2 = Sigma_u_diag * np.conj(Sigma_u_diag)
-
-        # Update the posterior mean and posterior covariance
-        mu = mu0 + (a0 + a1 @ mu0) * dt + R0_A1_H * InvBoB @ (np.hstack((x_diff, y_diff)) - A1 @ mu0 * dt)
-        R = R0 + (a1_diag[:,None] * R0 + R0 * a1_diag.conj() + np.diag(Sigma_u_diag2) - R0_A1_H * InvBoB @ R0_A1_H.conj().T) * dt
-        mu_t[:, i] = mu
-        R_t[:, i] = np.diag(R)
-        mu0 = mu
-        R0 = R
+def forward_OU(N, N_chunk, K, dt, x, y, r1, r2, mu0, a0, a1, R0, InvBoB, Sigma_u, mu_t, R_t, KX, KY, corr_noise):
+    if corr_noise == False:
+        # leverage the diagonal matrix property for acceleration
+        a1_diag = a1.diagonal()
+        Sigma_u_diag = Sigma_u.diagonal()
+    
+        for i in range(1, N):
+            i_chunk = (i-1) % N_chunk
+            if i_chunk == 0:
+                A1_t = get_A_OU(x[i-1:i-1+N_chunk, :], y[i-1:i-1+N_chunk, :], K, r1, r2, KX, KY)
+            
+            x0 = x[i - 1, :]
+            y0 = y[i - 1, :]
+            x1 = x[i, :]
+            y1 = y[i, :]
+            x_diff = np.mod(x1 - x0 + np.pi, 2 * np.pi) - np.pi # consider periodic boundary conditions
+            y_diff = np.mod(y1 - y0 + np.pi, 2 * np.pi) - np.pi # consider periodic boundary conditions
+    
+            # precompute
+            A1 = A1_t[i_chunk, :, :]
+            R0_A1_H = R0 @ A1.conj().T
+            Sigma_u_diag2 = Sigma_u_diag * np.conj(Sigma_u_diag)
+    
+            # Update the posterior mean and posterior covariance
+            mu = mu0 + (a0 + a1 @ mu0) * dt + R0_A1_H * InvBoB @ (np.hstack((x_diff, y_diff)) - A1 @ mu0 * dt)
+            R = R0 + (a1_diag[:,None] * R0 + R0 * a1_diag.conj() + np.diag(Sigma_u_diag2) - R0_A1_H * InvBoB @ R0_A1_H.conj().T) * dt
+            mu_t[:, i] = mu
+            R_t[:, i] = np.diag(R)
+            mu0 = mu
+            R0 = R
+            
+    elif corr_noise == True:
+        a1_diag = a1.diagonal()
+        Sigma_u_sq = Sigma_u @ Sigma_u.conj().T
+    
+        for i in range(1, N):
+            i_chunk = (i-1) % N_chunk
+            if i_chunk == 0:
+                A1_t = get_A_OU(x[i-1:i-1+N_chunk, :], y[i-1:i-1+N_chunk, :], K, r1, r2, KX, KY)
+            
+            x0 = x[i - 1, :]
+            y0 = y[i - 1, :]
+            x1 = x[i, :]
+            y1 = y[i, :]
+            x_diff = np.mod(x1 - x0 + np.pi, 2 * np.pi) - np.pi # consider periodic boundary conditions
+            y_diff = np.mod(y1 - y0 + np.pi, 2 * np.pi) - np.pi # consider periodic boundary conditions
+    
+            # precompute
+            A1 = A1_t[i_chunk, :, :]
+            R0_A1_H = R0 @ A1.conj().T
+    
+            # Update the posterior mean and posterior covariance
+            mu = mu0 + (a0 + a1 @ mu0) * dt + R0_A1_H * InvBoB @ (np.hstack((x_diff, y_diff)) - A1 @ mu0 * dt)
+            R = R0 + (a1_diag[:,None] * R0 + R0 * a1_diag.conj() + Sigma_u_sq - R0_A1_H * InvBoB @ R0_A1_H.conj().T) * dt
+            mu_t[:, i] = mu
+            R_t[:, i] = np.diag(R)
+            mu0 = mu
+            R0 = R
 
     return mu_t, R_t
 
@@ -176,7 +205,7 @@ def mu2psi(mu_t, K, r_cut, style):
     
 
 class Lagrangian_DA_OU:
-    def __init__(self, N, N_chunk, K, psi_k_t, tau_k_t, r1, r2, dt, sigma_xy, f, gamma, omega, sigma, xt, yt, r_cut, style='circle'):
+    def __init__(self, N, N_chunk, K, psi_k_t, tau_k_t, r1, r2, dt, sigma_xy, f, gamma, omega, sigma, xt, yt, r_cut, style='circle', corr_noise=False, **kargs):
         """
         Parameters:
         - N: int, total number of steps
@@ -196,6 +225,7 @@ class Lagrangian_DA_OU:
         - xt: observations x of shape (L, N)
         - yt: observations y of shape (L, N)
         - r_cut: modes truncation radius
+        - corr_noise: LSMs with correlalted noise
         """
         self.N = N
         self.N_chunk = N_chunk
@@ -223,9 +253,20 @@ class Lagrangian_DA_OU:
         self.KY = truncate(KY, r_cut, style)
         self.r1 = truncate(r1[:,:,0], r_cut, style)
         self.r2 = truncate(r2[:,:,0], r_cut, style)
+        self.corr_noise = corr_noise
+        
+        if corr_noise:
+            cov = kargs['cov']
+            cov = truncate(cov, r_cut, style=style)
+            d_cov = cov.shape[0]
+            self.Sigma_u[:d_cov, d_cov:] = np.diag(cov)
+            self.Sigma_u[d_cov:, :d_cov] = np.diag(cov)  
+            self.Sigma_u = np.nan_to_num(self.Sigma_u) # some modes not evaluated are nan
+            self.Sigma_u = self.Sigma_u * np.sqrt(2) # normailzation term due to real vs complex white noise
+
 
     def forward(self):
-        mu_t, R_t = forward_OU(self.N, self.N_chunk, self.K, self.dt, self.x, self.y, self.r1, self.r2, self.mu0, self.a0, self.a1, self.R0, self.InvBoB, self.Sigma_u, self.mu_t, self.R_t, self.KX, self.KY)
+        mu_t, R_t = forward_OU(self.N, self.N_chunk, self.K, self.dt, self.x, self.y, self.r1, self.r2, self.mu0, self.a0, self.a1, self.R0, self.InvBoB, self.Sigma_u, self.mu_t, self.R_t, self.KX, self.KY, self.corr_noise)
 
         return mu_t, R_t
 

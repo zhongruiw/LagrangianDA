@@ -3,9 +3,9 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 % Set simulation parameters; ocean regime
-N = 256;       % Number of points in each direction
-dt = 5E-4;     % initial time step size
-Nt = 6*1E4;      % Number of time steps
+N = 128;       % Number of points in each direction
+dt = 1E-6;     % initial time step size
+Nt = 100*1E5;      % Number of time steps
 qlim = 1E4;  % if any q > qlim, simulation stops
 
 % Set physical parameters
@@ -107,10 +107,10 @@ for ii=1:Nt
     qp = real(ifft2(q+dt*(0.1579162951616714*(k0+l0)+0.1867589405240008*(k2+l2)+...
     0.6805652953093346*(k3+l3)-0.2752405309950067*(k4+l4)+(k5+l5)/4)));
     q = fft2(qp);
-    % step size adjustment: EPS, PI.3.4 ; divide by 4 for a 4th order
-    % method with 3rd order embedded
-     dt = ((.75*tol/r1)^(.3/4))*((r0/r1)^(.4/4))*dt;
-     r0=r1;
+    % % step size adjustment: EPS, PI.3.4 ; divide by 4 for a 4th order
+    % % method with 3rd order embedded
+    %  dt = ((.75*tol/r1)^(.3/4))*((r0/r1)^(.4/4))*dt;
+    %  r0=r1;
     if any(abs(qp(:))>qlim)
         fprintf(['qp = ', num2str(max(abs(qp(:)))),'\n']);
         break
