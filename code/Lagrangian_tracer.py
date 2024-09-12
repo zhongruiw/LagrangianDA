@@ -18,7 +18,7 @@ class Lagrange_tracer_model:
         - K: number of modes
         - kx: np.array of shape (K,), wave numbers of x direction. K is the number of 1D Fourier modes.
         - ky: np.array of shape (K,), wave numbers of y direction. K is the number of 1D Fourier modes.
-        - psi_hat: np.array of shape (N, K, K) or truncated, Fourier time series of the upper layer stream function.
+        - psi_hat: np.array of shape (K, K, N) or truncated, Fourier time series of the upper layer stream function.
         - dt: float, time step
         - sigma_xy: float, standard deviation of the noise
         - x0:  Initial tracer locations in x of shape (L, 1)

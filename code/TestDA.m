@@ -125,92 +125,102 @@ for i = 2:N
     R0 = R;  
 end
 
-% only filtering
-s_n = 100;
-Y_Sampling_Save = zeros(n,N,s_n);
-for i = 1:N
-    Y_Sampling_Save(:, i, :) = mvnrnd(u_post_mean(:, i)', u_post_cov(:, :, i), s_n)';
-    % Y_Sampling_Save(:, i, :) = repmat(u_post_mean(:, i), [1, s_n]);
-end
-y_sampled = squeeze(Y_Sampling_Save(1,:,:));
-
-u_post_mean_one_step = u_post_mean;
-u_post_cov_one_step = u_post_cov;
-
-% gamma_mean_trace = u_post_mean;
-% gamma_cov_trace = u_post_cov;
-% 
-% mu_s = zeros(n,N); % Save the posterior mean in smoothing
-% R_s = zeros(n,n,N); % Save the posterior covariance in smoothing
-% 
-% % Smoothing is backward
-% % Intial values for smoothing (at the last time instant)
-% mu_s(:,end) = mu; % save the initial value of the smoother mean 
-% R_s(:,:,end) = R; % save the initial value of the smoother covariance
-% Y_Sampling = zeros(n,N); % Save for the backward sampled trajectory
-% % rd_Y = randn(n,N); % pre-generated random numbers
-% s_n = 1000;
+% % only filtering
+% s_n = 100;
 % Y_Sampling_Save = zeros(n,N,s_n);
-% Y_Sampling_Save(:,end,:) = mvnrnd(mu, R, s_n).T;
-% 
-% for i = N-1:-1:1
-%     % Matrices and vectors in the conditional Gaussian smoothing and
-%     % backward sampling
-% 
-%     gamma_cov = gamma_cov_trace(:,:,i); % filter covariance is needed as the input of smoothing formula 
-%     C_temp = gamma_cov * (eye(n) + a1 * dt)' * (b1 * b1' * dt + (eye(n) + a1 * dt) * gamma_cov * (eye(n) + a1 * dt)')^(-1);
-%     mu_s(:,i) = gamma_mean_trace(:,i) + C_temp * (mu_s(:,i+1) - a0 * dt - ( eye(n) + a1 * dt) * gamma_mean_trace(:,i)); % update the smoother mean
-%     R_s_temp = R_s(:,:,i+1);
-%     R_s_temp = gamma_cov + C_temp * (R_s_temp - (eye(n) + a1 * dt) * gamma_cov * (eye(n) + a1 * dt)' - b1 * b1' * dt) * C_temp';   
-%     R_s(:,:,i) = R_s_temp; % update the smoother covariance (this line and the above two lines)
-%     for j = 1:s_n
-%         Y_Sampling_Save(:,i,j) = Y_Sampling_Save(:,i+1,j) + (-a0 - a1 * Y_Sampling_Save(:,i+1,j)) * dt + b1 * b1' * inv(gamma_cov) * (gamma_mean_trace(:,i) ... 
-%         - Y_Sampling_Save(:,i+1,j)) * dt + b1 * randn(n,1) * sqrt(dt); % Backward sampling; the sampled trajectory has random noise
-%     end
-% 
+% for i = 1:N
+%     Y_Sampling_Save(:, i, :) = mvnrnd(u_post_mean(:, i)', u_post_cov(:, :, i), s_n)';
+%     % Y_Sampling_Save(:, i, :) = repmat(u_post_mean(:, i), [1, s_n]);
 % end
 % y_sampled = squeeze(Y_Sampling_Save(1,:,:));
 % 
-% u_post_mean = mu_s;
-% u_post_cov = R_s;
-% u_post_mean_one_step = mu_s;
-% u_post_cov_one_step = R_s;
+% u_post_mean_one_step = u_post_mean;
+% u_post_cov_one_step = u_post_cov;
 
-% figure
-% for i = 1:2
-%     subplot(4,1,i)
-%     if i == 1
-%         variable = y;
-%     elseif i == 2
-%         variable = z;
-%     end    
-%     hold on
-%     plot(dt:dt:N*dt, variable,'b','linewidth',2);
-%     plot(dt:dt:N*dt, gamma_mean_trace(i,:),'r','linewidth',2);
-%     post_upper = gamma_mean_trace(i,:) + 2 * transpose(sqrt(squeeze(gamma_cov_trace(i,i,:))));
-%     post_lower = gamma_mean_trace(i,:) - 2 * transpose(sqrt(squeeze(gamma_cov_trace(i,i,:))));
-%     tt = dt:dt:N*dt;
-%     patch([tt,tt(end:-1:1)],[post_lower,post_upper(end:-1:1)],'r','facealpha',0.2,'linestyle','none');
-%     box on
-%     set(gca,'fontsize',12)
-% end
-% for i = 1:2
-%     subplot(4,1,i+2)
-%     if i == 1
-%         variable = y;
-%     elseif i == 2
-%         variable = z;
-%     end    
-%     hold on
-%     plot(dt:dt:N*dt, variable,'b','linewidth',2);
-%     plot(dt:dt:N*dt, u_post_mean(i,:),'r','linewidth',2);
-%     post_upper = u_post_mean(i,:) + 2 * transpose(sqrt(squeeze(u_post_cov(i,i,:))));
-%     post_lower = u_post_mean(i,:) - 2 * transpose(sqrt(squeeze(u_post_cov(i,i,:))));
-%     tt = dt:dt:N*dt;
-%     patch([tt,tt(end:-1:1)],[post_lower,post_upper(end:-1:1)],'r','facealpha',0.2,'linestyle','none');
-%     box on
-%     set(gca,'fontsize',12)
-% end
+gamma_mean_trace = u_post_mean;
+gamma_cov_trace = u_post_cov;
+
+mu_s = zeros(n,N); % Save the posterior mean in smoothing
+R_s = zeros(n,n,N); % Save the posterior covariance in smoothing
+
+% Smoothing is backward
+% Intial values for smoothing (at the last time instant)
+mu_s(:,end) = mu; % save the initial value of the smoother mean 
+R_s(:,:,end) = R; % save the initial value of the smoother covariance
+Y_Sampling = zeros(n,N); % Save for the backward sampled trajectory
+% rd_Y = randn(n,N); % pre-generated random numbers
+s_n = 2;
+Y_Sampling_Save = zeros(n,N,s_n);
+Y_Sampling_Save(:,end,:) = mvnrnd(mu, R, s_n)';
+
+for i = N-1:-1:1
+    % Matrices and vectors in the conditional Gaussian smoothing and
+    % backward sampling
+
+    gamma_cov = gamma_cov_trace(:,:,i); % filter covariance is needed as the input of smoothing formula 
+    C_temp = gamma_cov * (eye(n) + a1 * dt)' * (b1 * b1' * dt + (eye(n) + a1 * dt) * gamma_cov * (eye(n) + a1 * dt)')^(-1);
+    mu_s(:,i) = gamma_mean_trace(:,i) + C_temp * (mu_s(:,i+1) - a0 * dt - ( eye(n) + a1 * dt) * gamma_mean_trace(:,i)); % update the smoother mean
+    R_s_temp = R_s(:,:,i+1);
+    R_s_temp = gamma_cov + C_temp * (R_s_temp - (eye(n) + a1 * dt) * gamma_cov * (eye(n) + a1 * dt)' - b1 * b1' * dt) * C_temp';   
+    R_s(:,:,i) = R_s_temp; % update the smoother covariance (this line and the above two lines)
+    for j = 1:s_n
+        Y_Sampling_Save(:,i,j) = Y_Sampling_Save(:,i+1,j) + (-a0 - a1 * Y_Sampling_Save(:,i+1,j)) * dt + b1 * b1' * inv(gamma_cov) * (gamma_mean_trace(:,i) ... 
+        - Y_Sampling_Save(:,i+1,j)) * dt + b1 * randn(n,1) * sqrt(dt); % Backward sampling; the sampled trajectory has random noise
+    end
+
+end
+y_sampled = squeeze(Y_Sampling_Save(1,:,:));
+
+u_post_mean = mu_s;
+u_post_cov = R_s;
+u_post_mean_one_step = mu_s;
+u_post_cov_one_step = R_s;
+
+
+figure
+plot(dt:dt:N*dt, gamma_mean_trace(1, :),'b','linewidth',2);
+hold on
+for i = 1:s_n
+    plot(dt:dt:N*dt, Y_Sampling_Save(1,:,i),'--','linewidth',2);
+    hold on
+end
+
+
+figure
+for i = 1:2
+    subplot(4,1,i)
+    if i == 1
+        variable = y;
+    elseif i == 2
+        variable = z;
+    end    
+    hold on
+    plot(dt:dt:N*dt, variable,'b','linewidth',2);
+    plot(dt:dt:N*dt, gamma_mean_trace(i,:),'r','linewidth',2);
+    post_upper = gamma_mean_trace(i,:) + 2 * transpose(sqrt(squeeze(gamma_cov_trace(i,i,:))));
+    post_lower = gamma_mean_trace(i,:) - 2 * transpose(sqrt(squeeze(gamma_cov_trace(i,i,:))));
+    tt = dt:dt:N*dt;
+    patch([tt,tt(end:-1:1)],[post_lower,post_upper(end:-1:1)],'r','facealpha',0.2,'linestyle','none');
+    box on
+    set(gca,'fontsize',12)
+end
+for i = 1:2
+    subplot(4,1,i+2)
+    if i == 1
+        variable = y;
+    elseif i == 2
+        variable = z;
+    end    
+    hold on
+    plot(dt:dt:N*dt, variable,'b','linewidth',2);
+    plot(dt:dt:N*dt, u_post_mean(i,:),'r','linewidth',2);
+    post_upper = u_post_mean(i,:) + 2 * transpose(sqrt(squeeze(u_post_cov(i,i,:))));
+    post_lower = u_post_mean(i,:) - 2 * transpose(sqrt(squeeze(u_post_cov(i,i,:))));
+    tt = dt:dt:N*dt;
+    patch([tt,tt(end:-1:1)],[post_lower,post_upper(end:-1:1)],'r','facealpha',0.2,'linestyle','none');
+    box on
+    set(gca,'fontsize',12)
+end
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% Method II %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

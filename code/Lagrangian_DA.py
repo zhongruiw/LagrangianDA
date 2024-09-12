@@ -110,7 +110,8 @@ def forward_OU(N, N_chunk, K, dt, x, y, r1, r2, mu0, a0, a1, R0, InvBoB, Sigma_u
         # leverage the diagonal matrix property for acceleration
         a1_diag = a1.diagonal()
         Sigma_u_diag = Sigma_u.diagonal()
-    
+        Sigma_u_diag2 = Sigma_u_diag * np.conj(Sigma_u_diag)
+
         for i in range(1, N):
             i_chunk = (i-1) % N_chunk
             if i_chunk == 0:
@@ -126,7 +127,6 @@ def forward_OU(N, N_chunk, K, dt, x, y, r1, r2, mu0, a0, a1, R0, InvBoB, Sigma_u
             # precompute
             A1 = A1_t[i_chunk, :, :]
             R0_A1_H = R0 @ A1.conj().T
-            Sigma_u_diag2 = Sigma_u_diag * np.conj(Sigma_u_diag)
     
             # Update the posterior mean and posterior covariance
             mu = mu0 + (a0 + a1 @ mu0) * dt + R0_A1_H * InvBoB @ (np.hstack((x_diff, y_diff)) - A1 @ mu0 * dt)
@@ -196,13 +196,72 @@ def forward_CG(N, N_chunk, dt, K, KX_cut, KY_cut, k_index_map_cut, mu0, R0, InvB
 
 
 def mu2psi(mu_t, K, r_cut, style):
-    '''reshape flattened variables to two modes matrices'''
+    '''
+    reshape flattened variables to two modes matrices
+    '''
     mu_t_ = mu_t.reshape((mu_t.shape[0] // 2, 2, -1), order='F')
     psi_k = inv_truncate(mu_t_[:,0,:], r_cut, K, style)
     tau_k = inv_truncate(mu_t_[:,1,:], r_cut, K, style)
         
     return psi_k, tau_k
+
+
+def mu2layer(mu_t, K, r_cut, r1, r2, style):
+    '''
+    transform eigenmodes to two-layer modes (flattened matrices)
+    '''
+    mu_t_ = mu_t.reshape((mu_t.shape[0] // 2, 2, -1), order='F')
+    psi_k_ = mu_t_[:,0,:]
+    tau_k_ = mu_t_[:,1,:]
+    psi1_k_ = np.zeros_like(psi_k_)
+    psi2_k_ = np.zeros_like(psi_k_)
+    r1 = truncate(r1, r_cut, style)
+    r2 = truncate(r2, r_cut, style)
+    for ik in range(psi_k_.shape[0]):
+        eigenmat = np.array([r1[ik, :],r2[ik, :]]).T
+        layer = eigenmat @ np.array([psi_k_[ik, :],tau_k_[ik, :]])
+        psi1_k_[ik, :] = layer[0, :]
+        psi2_k_[ik, :] = layer[1, :]
+
+    return psi1_k_, psi2_k_
     
+
+def back_sampling(N_s, dt, mu_t, R_t, Sigma, a0, a1):
+    K_, N = mu_t.shape
+    u_t = np.zeros((N_s, K_, N), dtype='complex') 
+    
+    # skip mode (0,0)
+    mask = np.ones(K_, dtype=bool) 
+    mask[0] = False
+    mask[K_//2] = False
+    mask2d = np.ones((K_, K_), dtype=bool)
+    mask2d[0, :] = False 
+    mask2d[:, 0] = False
+    mask2d[K_//2, :] = False 
+    mask2d[:, K_//2] = False
+    K_mask = np.sum(mask)
+    a0 = a0[mask] 
+    R_t = R_t[mask, :]
+    mu_t = mu_t[mask, :]
+    a1 = a1[mask2d].reshape(K_-2, K_-2)
+    Sigma = Sigma[mask2d].reshape(K_-2, K_-2)
+    Sigma_sq = Sigma @ Sigma.conj().T
+
+    for n_s in range(N_s):
+        mu0 = mu_t[:, -1]
+        u_t[n_s, mask, -1] = mu0
+        R0 = np.diag(R_t[:, -1])
+        u_t[n_s, mask, -1] = np.random.multivariate_normal(mu0.real, R0.real / 2) + 1j * np.random.multivariate_normal(mu0.imag, R0.real / 2) # assume for now only variance of R_t is saved
+
+    for n in range(N-2, -1, -1):
+        R_inv = np.diag(1 / R_t[:, n])
+        noise = np.diag(Sigma) / np.sqrt(2) * (np.random.randn(N_s, K_mask) + 1j*np.random.randn(N_s, K_mask)) * np.sqrt(dt)
+        ## if correlated noise, need to add extra terms
+        # noise = (Sigma / np.sqrt(2)) @ (noise_r + 1j*noise_i) * np.sqrt(dt)
+        u_t[:, mask, n] = u_t[:, mask, n+1] + np.squeeze((-a0[:, None] - a1@u_t[:, mask, n+1][:, :, None]) * dt + Sigma_sq @ R_inv @ (mu_t[:, n][:, None] - u_t[:, mask, n+1][:, :, None])) * dt + noise
+        
+    return u_t
+
 
 class Lagrangian_DA_OU:
     def __init__(self, N, N_chunk, K, psi_k_t, tau_k_t, r1, r2, dt, sigma_xy, f, gamma, omega, sigma, xt, yt, r_cut, style='circle', corr_noise=False, **kargs):
@@ -235,7 +294,8 @@ class Lagrangian_DA_OU:
         self.InvBoB = 1 / sigma_xy**2
         self.mu0 = np.concatenate((truncate(psi_k_t[:,:,0],r_cut, style=style), truncate(tau_k_t[:,:,0],r_cut, style=style))) # assume the initial condition is truth
         self.n = self.mu0.shape[0]
-        self.R0 = np.zeros((self.n, self.n), dtype='complex')
+        # self.R0 = np.eye(self.n, dtype='complex')
+        self.R0 = np.zeros((self.n,self.n), dtype='complex')
         self.mu_t = np.zeros((self.n, N), dtype='complex')  # posterior mean
         self.mu_t[:, 0] = self.mu0
         self.R_t = np.zeros((self.n, N), dtype='complex')  # posterior covariance
@@ -272,44 +332,27 @@ class Lagrangian_DA_OU:
 
 
 class Lagrangian_DA_CG:
-    def __init__(self, N, N_chunk, K, dt, psi1_k_t, psi2_k_t, sigma_1, sigma_2, kd, beta, kappa, nu, U, h_hat, r_cut, style='circle'):
+    def __init__(self, K, sigma_1, sigma_2, kd, beta, kappa, nu, U, h_hat, r_cut, style='circle'):
         """
         Parameters:
-        - N: int, total number of steps
-        - N_chunk: trunk for calculating DA coefficient matrix
         - K: number of Fourier modes along one axis
         - style: truncation style, 'circle' or 'square'
         - psi1_k_t: np.array of shape (K, K, N), truth time series of the Fourier eigenmode1 stream function.
         - psi2_k_t: np.array of shape (K, K, N), only used for the DA initial condition, assumed to be truth 
-        - dt: float, time step
         - sigma_xy: float, standard deviation of the observation noise
         - r_cut: modes truncation radius
         """
-        self.N = N
-        self.N_chunk = N_chunk
+
         self.K = K
-        self.dt = dt
         Kx = np.fft.fftfreq(K) * K
         Ky = np.fft.fftfreq(K) * K
         KX, KY = np.meshgrid(Kx, Ky)
         self.KX_cut = truncate(KX, r_cut, style)
         self.KY_cut = truncate(KY, r_cut, style)
         self.k_index_map_cut = {(KX[iy, ix], KY[iy, ix]): (ix, iy) for ix in range(K) for iy in range(K) if (KX[iy, ix]**2 + KY[iy, ix]**2) <=r_cut**2}
-        psi1_k_t_cut = truncate(psi1_k_t, r_cut, style)
-        psi2_k_t_cut = truncate(psi2_k_t, r_cut, style)
         self.h_k_cut = truncate(h_hat, r_cut, style)
-        self.psi1_k_t_cut_T = np.transpose(psi1_k_t_cut, axes=(1,0)) # psi_hat should be of shape shape (N,k_left)
-        # initialized mean and variance
-        self.mu0 = psi2_k_t_cut[:, 0] # assume the initial condition is truth
-        K_ = psi2_k_t_cut.shape[0] # number of flattened K modes
-        self.R0 = np.zeros((K_, K_), dtype='complex')
-        self.mu_t = np.zeros((K_, N), dtype='complex')  # posterior mean
-        self.mu_t[:, 0] = self.mu0
-        self.R_t = np.zeros((K_, N), dtype='complex')  # posterior covariance
-        self.R_t[:, 0] = np.diag(self.R0)  # only save the diagonal elements
         self.sigma_1 = sigma_1
-        self.sigma_2 = sigma_2 * np.ones(K_)
-        self.InvBoB = 1 / sigma_1**2
+        self.sigma_2 = sigma_2
         self.kd = kd
         self.beta = beta
         self.kappa = kappa
@@ -318,7 +361,64 @@ class Lagrangian_DA_CG:
         self.style = style
         self.r_cut = r_cut
 
-    def forward(self):
-        mu_t, R_t = forward_CG(self.N, self.N_chunk, self.dt, self.K, self.KX_cut, self.KY_cut, self.k_index_map_cut, self.mu0, self.R0, self.InvBoB, self.sigma_2, self.mu_t, self.R_t, self.kd, self.beta, self.kappa, self.nu, self.U, self.psi1_k_t_cut_T, self.h_k_cut)
+    def forward(self, N, N_chunk, dt, N_s=1, **kargs):
+        """
+        - N: int, total number of steps
+        - N_chunk: trunk for calculating DA coefficient matrix
+        - dt: float, time step
+        - N_s: number of observation trajectories
+        """
 
-        return mu_t, R_t
+        # initialize mean and variance
+        psi2_k_t0 = kargs['psi2_k_t0']
+        psi2_k_t0_cut = truncate(psi2_k_t0, self.r_cut, self.style)
+        mu0 = psi2_k_t0_cut # the initial condition posterior mean
+        K_ = psi2_k_t0_cut.shape[0] # number of flattened K modes
+        # R0 = np.eye(K_, dtype='complex')
+        R0 = np.zeros((K_,K_), dtype='complex')
+        sigma_1 = self.sigma_1
+        sigma_2 = self.sigma_2 * np.ones(K_)        
+        InvBoB = 1 / sigma_1**2
+
+        if N_s == 1:
+            psi1_k_t = kargs['psi1_k_t']
+            psi1_k_t_cut = truncate(psi1_k_t, self.r_cut, self.style)
+            psi2_k_t0_cut = truncate(psi2_k_t0, self.r_cut, self.style)
+            psi1_k_t_cut = np.transpose(psi1_k_t_cut, axes=(1,0)) # psi_hat should be of shape shape (N,k_left)
+            mu_t = np.zeros((K_, N), dtype='complex')  # posterior mean
+            mu_t[:, 0] = mu0
+            R_t = np.zeros((K_, N), dtype='complex')  # posterior covariance
+            R_t[:, 0] = np.diag(R0)  # only save the diagonal elements
+
+            mu_t, R_t = forward_CG(N, N_chunk, dt, self.K, self.KX_cut, self.KY_cut, self.k_index_map_cut, mu0, R0, InvBoB, sigma_2, mu_t, R_t, self.kd, self.beta, self.kappa, self.nu, self.U, psi1_k_t_cut, self.h_k_cut)
+
+            return mu_t, R_t
+
+        elif N_s > 1:
+            mu_eigen_t = kargs['mu_eigen_t'] # eigenmodes
+            R_eigen_t = kargs['R_eigen_t']
+            sigma = kargs['sigma']
+            f = kargs['f']
+            gamma = kargs['gamma']
+            omega = kargs['omega']
+            r1 = kargs['r1']
+            r2 = kargs['r2']
+            Sigma = np.diag(truncate(sigma,self.r_cut, style=self.style).flatten(order='F')) # assume independent noise for now
+            a0 = truncate(f,self.r_cut, style=self.style).flatten(order='F')
+            a1 = -np.diag(truncate(gamma,self.r_cut, style=self.style).flatten(order='F')) + 1j * np.diag(truncate(omega,self.r_cut, style=self.style).flatten(order='F')) 
+            psitau_k_s = back_sampling(N_s, dt, mu_eigen_t, R_eigen_t, Sigma, a0, a1)
+            mu_t = np.zeros((N_s, K_, N), dtype='complex')  # posterior mean
+            mu_t[:, :, 0] = mu0
+            R_t = np.zeros((N_s, K_, N), dtype='complex')  # posterior covariance
+            R_t[:, :, 0] = np.diag(R0)  # only save the diagonal elements
+
+            for n_s in range(N_s):
+                print(n_s)
+                psi1_k_s, _ = mu2layer(psitau_k_s[n_s, :, :], self.K, self.r_cut, r1, r2, self.style)
+                psi1_k_s = np.transpose(psi1_k_s, axes=(1,0)) # psi_hat should be of shape shape (N,k_left)
+
+                mu_t[n_s, :, :], R_t[n_s, :, :] = forward_CG(N, N_chunk, dt, self.K, self.KX_cut, self.KY_cut, self.k_index_map_cut, mu0, R0, InvBoB, sigma_2, mu_t[n_s, :, :], R_t[n_s, :, :], self.kd, self.beta, self.kappa, self.nu, self.U, psi1_k_s, self.h_k_cut)
+
+
+            return mu_t, R_t
+            
