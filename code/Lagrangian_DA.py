@@ -403,7 +403,7 @@ class Lagrangian_DA_OU:
             R_t = np.zeros((K_, N), dtype='complex')  # posterior covariance
             R_t[:, 0] = np.diag(R0) # only save the diagonal elements
 
-            deno = 1 / r1[:, 0] * r2[:, 1] - r1[:, 1] * r2[:, 0]
+            deno = 1 / (r1[:, 0] * r2[:, 1] - r1[:, 1] * r2[:, 0])
             deno[0] = 0
             A0_ = (r1[:, 0] * r2[:, 1] * (-gamma[:, 0] + 1j * omega[:, 0]) - r1[:, 1] * r2[:, 0] * (-gamma[:, 1] + 1j * omega[:, 1])) * deno
             A1 = (r1[:, 0] * r2[:, 0] * (-(-gamma[:, 0] + gamma[:, 1]) + 1j * (-omega[:, 0] + omega[:, 1]))) * deno
@@ -416,7 +416,7 @@ class Lagrangian_DA_OU:
             sigma1 = r1[:, 1] * sigma[:, 0]
             sigma2 = r2[:, 1] * sigma[:, 1]
 
-            mu_t, R_t = forward_OU_flow(N, N_chunk, dt, psi1_k_t.T, mu0, R0, mu_t, R_t, A0_, A1, a0_, a1, F1, F2, Sigma2, Sigma2, sigma1, sigma2)
+            mu_t, R_t = forward_OU_flow(N, N_chunk, dt, psi1_k_t.T, mu0, R0, mu_t, R_t, A0_, A1, a0_, a1, F1, F2, Sigma1, Sigma2, sigma1, sigma2)
 
         return mu_t, R_t
 
