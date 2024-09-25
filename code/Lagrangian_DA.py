@@ -4,6 +4,7 @@ from numba.typed import Dict
 from numba.core import types
 from scipy import sparse
 from mode_truc import truncate, inv_truncate
+from conj_symm_tools import avg_conj_symm
 
 ''' 
 Lagrangian DA 
@@ -41,12 +42,12 @@ def get_A_OU_flow(psi1_k_t, A0_, a0_, F1, F2):
 
 
 @jit(nopython=True)
-def get_A_CG_nonlinear(K, psi1_hat, h_hat, linear_A1, linear_a1, k_index_map, list_dic_k_map, kd):
+def get_A_CG_nonlinear(K, N, k_left, psi1_hat, h_hat, k_index_map, list_dic_k_map, kd):
     # nonlinear summation part for A0, a0, A1 and a1
     nonlinear_sum_A0 = np.zeros_like(psi1_hat, dtype=np.complex128)
     nonlinear_sum_a0 = np.zeros_like(psi1_hat, dtype=np.complex128)
-    nonlinear_sum_A1 = np.zeros_like(linear_A1, dtype=np.complex128)
-    nonlinear_sum_a1 = np.zeros_like(linear_a1, dtype=np.complex128)
+    nonlinear_sum_A1 = np.zeros((N, k_left, k_left), dtype=np.complex128)
+    nonlinear_sum_a1 = np.zeros((N, k_left, k_left), dtype=np.complex128)
     
     for ik_, (k, ik) in enumerate(k_index_map.items()):
         kx, ky = k
@@ -101,7 +102,7 @@ def get_A_CG(K, KX, KY, k_index_map, kd, beta, kappa, nu, U, psi1_hat, h_hat):
     linear_A1 = np.tile(np.diag(linear_A1_diag)[None,:,:], (N,1,1)) 
     linear_a1 = np.tile(np.diag(linear_a1_diag)[None,:,:], (N,1,1)) 
 
-    nonlinear_sum_A0, nonlinear_sum_a0, nonlinear_sum_A1, nonlinear_sum_a1 = get_A_CG_nonlinear(K, psi1_hat, h_hat, linear_A1, linear_a1, k_index_map, list_dic_k_map, kd)
+    nonlinear_sum_A0, nonlinear_sum_a0, nonlinear_sum_A1, nonlinear_sum_a1 = get_A_CG_nonlinear(K, N, k_left, psi1_hat, h_hat, k_index_map, list_dic_k_map, kd)
 
     # aggregate 
     A0 = linear_A0 + nonlinear_sum_A0
@@ -122,63 +123,38 @@ def get_A_CG(K, KX, KY, k_index_map, kd, beta, kappa, nu, U, psi1_hat, h_hat):
 
 
 def forward_OU(N, N_chunk, K, dt, x, y, r1, r2, mu0, a0, a1, R0, InvBoB, Sigma_u, mu_t, R_t, KX, KY, corr_noise):
+    # leverage the diagonal matrix property for acceleration
+    a1_diag = a1.diagonal()
     if corr_noise == False:
-        # leverage the diagonal matrix property for acceleration
-        a1_diag = a1.diagonal()
-        Sigma_u_diag = Sigma_u.diagonal()
-        Sigma_u_diag2 = Sigma_u_diag * np.conj(Sigma_u_diag)
+        Sigma_u_diag2 = Sigma_u.diagonal() * np.conj(Sigma_u.diagonal())
+        Sigma_u_sq = np.diag(Sigma_u_diag2)
 
-        for i in range(1, N):
-            i_chunk = (i-1) % N_chunk
-            if i_chunk == 0:
-                A1_t = get_A_OU(x[i-1:i-1+N_chunk, :], y[i-1:i-1+N_chunk, :], K, r1, r2, KX, KY)
-            
-            x0 = x[i - 1, :]
-            y0 = y[i - 1, :]
-            x1 = x[i, :]
-            y1 = y[i, :]
-            x_diff = np.mod(x1 - x0 + np.pi, 2 * np.pi) - np.pi # consider periodic boundary conditions
-            y_diff = np.mod(y1 - y0 + np.pi, 2 * np.pi) - np.pi # consider periodic boundary conditions
-    
-            # precompute
-            A1 = A1_t[i_chunk, :, :]
-            R0_A1_H = R0 @ A1.conj().T
-    
-            # Update the posterior mean and posterior covariance
-            mu = mu0 + (a0 + a1 @ mu0) * dt + R0_A1_H * InvBoB @ (np.hstack((x_diff, y_diff)) - A1 @ mu0 * dt)
-            R = R0 + (a1_diag[:,None] * R0 + R0 * a1_diag.conj() + np.diag(Sigma_u_diag2) - R0_A1_H * InvBoB @ R0_A1_H.conj().T) * dt
-            mu_t[:, i] = mu
-            R_t[:, i] = np.diag(R)
-            mu0 = mu
-            R0 = R
-            
     elif corr_noise == True:
-        a1_diag = a1.diagonal()
         Sigma_u_sq = Sigma_u @ Sigma_u.conj().T
-    
-        for i in range(1, N):
-            i_chunk = (i-1) % N_chunk
-            if i_chunk == 0:
-                A1_t = get_A_OU(x[i-1:i-1+N_chunk, :], y[i-1:i-1+N_chunk, :], K, r1, r2, KX, KY)
-            
-            x0 = x[i - 1, :]
-            y0 = y[i - 1, :]
-            x1 = x[i, :]
-            y1 = y[i, :]
-            x_diff = np.mod(x1 - x0 + np.pi, 2 * np.pi) - np.pi # consider periodic boundary conditions
-            y_diff = np.mod(y1 - y0 + np.pi, 2 * np.pi) - np.pi # consider periodic boundary conditions
-    
-            # precompute
-            A1 = A1_t[i_chunk, :, :]
-            R0_A1_H = R0 @ A1.conj().T
-    
-            # Update the posterior mean and posterior covariance
-            mu = mu0 + (a0 + a1 @ mu0) * dt + R0_A1_H * InvBoB @ (np.hstack((x_diff, y_diff)) - A1 @ mu0 * dt)
-            R = R0 + (a1_diag[:,None] * R0 + R0 * a1_diag.conj() + Sigma_u_sq - R0_A1_H * InvBoB @ R0_A1_H.conj().T) * dt
-            mu_t[:, i] = mu
-            R_t[:, i] = np.diag(R)
-            mu0 = mu
-            R0 = R
+
+    for i in range(1, N):
+        i_chunk = (i-1) % N_chunk
+        if i_chunk == 0:
+            A1_t = get_A_OU(x[i-1:i-1+N_chunk, :], y[i-1:i-1+N_chunk, :], K, r1, r2, KX, KY)
+        
+        x0 = x[i - 1, :]
+        y0 = y[i - 1, :]
+        x1 = x[i, :]
+        y1 = y[i, :]
+        x_diff = np.mod(x1 - x0 + np.pi, 2 * np.pi) - np.pi # consider periodic boundary conditions
+        y_diff = np.mod(y1 - y0 + np.pi, 2 * np.pi) - np.pi # consider periodic boundary conditions
+
+        # precompute
+        A1 = A1_t[i_chunk, :, :]
+        R0_A1_H = R0 @ A1.conj().T
+
+        # Update the posterior mean and posterior covariance
+        mu = mu0 + (a0 + a1 @ mu0) * dt + R0_A1_H * InvBoB @ (np.hstack((x_diff, y_diff)) - A1 @ mu0 * dt)
+        R = R0 + (a1_diag[:,None] * R0 + R0 * a1_diag.conj() + Sigma_u_sq - R0_A1_H * InvBoB @ R0_A1_H.conj().T) * dt
+        mu_t[:, i] = mu
+        R_t[:, i] = np.diag(R)
+        mu0 = mu
+        R0 = R
 
     return mu_t, R_t
 
@@ -421,8 +397,58 @@ class Lagrangian_DA_OU:
         return mu_t, R_t
 
 
+    def forward_model(self, N, dt, psi1_k0, psi2_k0, noise=None):
+        '''
+        model free forecast.
+        noise should satisfy conjugate symmetry, 
+        e.g.,
+        noise = np.random.randn(K, K, N, 2) + 1j * np.random.randn(K, K, N, 2)
+        for n in range(N):
+            noise[:,:,n,:] = avg_conj_symm(noise[:,:,n,:], r1)
+    
+        '''
+        r_cut = self.r_cut
+        style = self.style
+        r1 = self.r1
+        r2 = self.r2
+        gamma = self.gamma
+        omega = self.omega
+        f = self.f
+        sigma = self.sigma
+        deno = 1 / (r1[:, 0] * r2[:, 1] - r1[:, 1] * r2[:, 0])
+        deno[0] = 0
+        A0_ = (r1[:, 0] * r2[:, 1] * (-gamma[:, 0] + 1j * omega[:, 0]) - r1[:, 1] * r2[:, 0] * (-gamma[:, 1] + 1j * omega[:, 1])) * deno
+        A1 = (r1[:, 0] * r2[:, 0] * (-(-gamma[:, 0] + gamma[:, 1]) + 1j * (-omega[:, 0] + omega[:, 1]))) * deno
+        a0_ = (r1[:, 1] * r2[:, 1] * (-(gamma[:, 0] - gamma[:, 1]) + 1j * (omega[:, 0] - omega[:, 1]))) * deno
+        a1 = (-r1[:, 1] * r2[:, 0] * (-gamma[:, 0] + 1j * omega[:, 0]) + r1[:, 0] * r2[:, 1] * (-gamma[:, 1] + 1j * omega[:, 1])) * deno
+        F1 = r1[:, 0] * f[:, 0] + r2[:, 0] * f[:, 1]
+        F2 = r1[:, 1] * f[:, 0] + r2[:, 1] * f[:, 1]
+        Sigma1 = r1[:, 0] * sigma[:, 0]
+        Sigma2 = r2[:, 0] * sigma[:, 1]
+        sigma1 = r1[:, 1] * sigma[:, 0]
+        sigma2 = r2[:, 1] * sigma[:, 1]
+
+        psi1_k0 = truncate(psi1_k0, r_cut, style) # assume the initial condition is truth
+        psi2_k0 = truncate(psi2_k0, r_cut, style) # assume the initial condition is truth
+        noise = truncate(noise, r_cut, style)
+        K_ = psi1_k0.shape[0]
+        psi1_k_t = np.zeros((N, K_), dtype=complex)
+        psi2_k_t = np.zeros((N, K_), dtype=complex)
+        psi1_k_t[0, :] = psi1_k0
+        psi2_k_t[1, :] = psi2_k0
+        for i in range(1, N):
+            A0 = A0_ * psi1_k_t[i-1, :] + F1
+            a0 = a0_ * psi1_k_t[i-1, :] + F2
+            
+            # Update 
+            psi1_k_t[i, :] = psi1_k_t[i-1, :] + (A0 + A1 * psi2_k_t[i-1, :]) * dt + (Sigma1 * noise[:, i, 0] + Sigma2 * noise[:, i, 1]) * np.sqrt(dt)
+            psi2_k_t[i, :] = psi2_k_t[i-1, :] + (a0 + a1 * psi2_k_t[i-1, :]) * dt + (sigma1 * noise[:, i, 0] + sigma2 * noise[:, i, 1]) * np.sqrt(dt)
+
+        return psi1_k_t, psi2_k_t
+
+
 class Lagrangian_DA_CG:
-    def __init__(self, K, sigma_1, sigma_2, kd, beta, kappa, nu, U, h_hat, r_cut, style='circle'):
+    def __init__(self, K, kd, beta, kappa, nu, U, h_hat, r_cut, style='circle'):
         """
         Parameters:
         - K: number of Fourier modes along one axis
@@ -440,8 +466,6 @@ class Lagrangian_DA_CG:
         self.KX_cut = truncate(KX, r_cut, style)
         self.KY_cut = truncate(KY, r_cut, style)
         self.h_k_cut = truncate(h_hat, r_cut, style)
-        self.sigma_1 = sigma_1
-        self.sigma_2 = sigma_2
         self.kd = kd
         self.beta = beta
         self.kappa = kappa
@@ -467,7 +491,7 @@ class Lagrangian_DA_CG:
         self.k_index_map_cut = k_index_map_cut
 
 
-    def forward(self, N, N_chunk, dt, N_s=1, **kargs):
+    def forward(self, N, N_chunk, dt, N_s=1, sigma_1=1., sigma_2=4., **kargs):
         """
         - N: int, total number of steps
         - N_chunk: trunk for calculating DA coefficient matrix
@@ -482,14 +506,14 @@ class Lagrangian_DA_CG:
         K_ = psi2_k_t0_cut.shape[0] # number of flattened K modes
         # R0 = np.eye(K_, dtype='complex')
         R0 = np.zeros((K_,K_), dtype='complex')
-        sigma_1 = self.sigma_1
-        sigma_2 = self.sigma_2 * np.ones(K_)        
+        sigma_1 = sigma_1 * np.ones(K_)
+        sigma_2 = sigma_2 * np.ones(K_)        
         InvBoB = 1 / sigma_1**2
+        InvBoB[0] = 0 # watch this
 
         if N_s == 1:
             psi1_k_t = kargs['psi1_k_t']
             psi1_k_t_cut = truncate(psi1_k_t, self.r_cut, self.style)
-            psi2_k_t0_cut = truncate(psi2_k_t0, self.r_cut, self.style)
             psi1_k_t_cut = np.transpose(psi1_k_t_cut, axes=(1,0)) # psi_hat should be of shape shape (N,k_left)
             mu_t = np.zeros((K_, N), dtype='complex')  # posterior mean
             mu_t[:, 0] = mu0
@@ -529,6 +553,9 @@ class Lagrangian_DA_CG:
             return mu_t, R_t
 
     def forward_model(self, N, dt, psi1_k_t0, psi2_k_t0):
+        '''
+        CG bare truncation model free forecast
+        '''
         K = self.K
         r_cut = self.r_cut
         style = self.style
@@ -564,4 +591,36 @@ class Lagrangian_DA_CG:
 
         return psi1_k_t, psi2_k_t
 
-                
+    def calibrate_sigma(self, N_chunk, dt, psi1_k_t, psi2_k_t):
+        r_cut = self.r_cut
+        style = self.style
+        N = psi1_k_t.shape[2]
+        psi1_k_t_cut = truncate(psi1_k_t, r_cut, style)
+        psi1_k_t_cut = np.transpose(psi1_k_t_cut, axes=(1,0)) # psi_hat should be of shape shape (N,k_left)
+        psi2_k_t_cut = truncate(psi2_k_t, r_cut, style)
+        psi2_k_t_cut = np.transpose(psi2_k_t_cut, axes=(1,0)) # psi_hat should be of shape shape (N,k_left)
+        res1 = np.zeros(psi1_k_t_cut.shape, dtype='complex')
+        res2 = np.zeros(psi1_k_t_cut.shape, dtype='complex')
+        
+        for i in range(1, N):
+            i_chunk = (i-1) % N_chunk
+            if i_chunk == 0:
+                A0_t, a0_t, A1_t, a1_t = get_A_CG(self.K, self.KX_cut, self.KY_cut, self.k_index_map_cut, self.kd, self.beta, self.kappa, self.nu, self.U, psi1_k_t_cut[i-1:i-1+N_chunk,:], self.h_k_cut)
+            
+            A0 = A0_t[i_chunk, :]
+            a0 = a0_t[i_chunk, :]
+            A1 = A1_t[i_chunk, :, :]
+            a1 = a1_t[i_chunk, :, :]
+
+            # precompute
+            psi1_diff = psi1_k_t_cut[i, :] - psi1_k_t_cut[i-1, :]
+            psi2_diff = psi2_k_t_cut[i, :] - psi2_k_t_cut[i-1, :]
+
+            res1[i-1, :] = psi1_diff - (A0 + A1 @ psi2_k_t_cut[i-1, :]) * dt
+            res2[i-1, :] = psi2_diff - (a0 + a1 @ psi2_k_t_cut[i-1, :]) * dt
+
+        Sigma1 = np.std(res1 / np.sqrt(dt), axis=0)
+        Sigma2 = np.std(res2 / np.sqrt(dt), axis=0)
+
+        return Sigma1, Sigma2
+                    
