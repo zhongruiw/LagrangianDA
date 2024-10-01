@@ -91,3 +91,31 @@ def avg_conj_symm(matrix, r1):
                     matrix[iky, ikx, 1] = real_mean - 1j*imag_mean
 
     return matrix
+
+
+def map_conj_symm(matrix, r1):
+    '''
+    matrix1, matrix2: psi_k, tau_k
+    modify matrix1(2) to conjugate symmetric if omega_k or r_k is real-value, i.e., psi_k = psi_{-k}
+    otherwise modfify matrix1_k and matrix2_{-k} to be conjugate symmetric, i.e.,psi_{k} = tau_{-k}
+    by mapping the magnitude of real and imag parts from one half to the other halof of conjugate pairs'''
+    # if input matrix is not complex, convert it to be complex
+    if matrix.dtype != 'complex128':
+        matrix = matrix + 0j
+        
+    K = matrix.shape[0]
+    kx = np.fft.fftfreq(K) * K
+    ky = np.fft.fftfreq(K) * K
+
+    for ikx, kx_value in enumerate(kx):
+        for iky, ky_value in enumerate(ky):
+            if np.mod(kx_value,K/2)==0 and np.mod(ky_value,K/2)==0: # enforce K/2 mode to be real-value if K is even
+                matrix[iky, ikx] = matrix[iky, ikx].real
+            elif kx_value>0 or ((kx_value == 0 or kx_value==-K/2) and ky_value > 0): # half of modes
+                if r1[iky,ikx,0].imag == 0:
+                    matrix[-iky, -ikx] = matrix[iky, ikx].conj()
+                else:
+                    matrix[-iky, -ikx, 1] = matrix[iky, ikx, 0].conj()
+                    matrix[iky, ikx, 1] = matrix[-iky, -ikx, 0].conj()
+
+    return matrix

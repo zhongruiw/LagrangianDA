@@ -4,7 +4,7 @@ from numba.typed import Dict
 from numba.core import types
 from scipy import sparse
 from mode_truc import truncate, inv_truncate
-from conj_symm_tools import avg_conj_symm
+from conj_symm_tools import avg_conj_symm, map_conj_symm
 
 ''' 
 Lagrangian DA 
@@ -216,6 +216,41 @@ def forward_CG(N, N_chunk, dt, K, KX_cut, KY_cut, k_index_map_cut, mu0, R0, InvB
     return mu_t, R_t
 
 
+def back_sampling(N_s, dt, mu_t, R_t, Sigma, a0, a1, stdnoise):
+    K_, N = mu_t.shape
+    u_t = np.zeros((N_s, K_, N), dtype='complex') 
+    
+    # skip mode (0,0)
+    mask = np.ones(K_, dtype=bool) 
+    mask[0] = False
+    mask[K_//2] = False
+    mask2d = np.ones((K_, K_), dtype=bool)
+    mask2d[0, :] = False 
+    mask2d[:, 0] = False
+    mask2d[K_//2, :] = False 
+    mask2d[:, K_//2] = False
+    K_mask = np.sum(mask)
+    a0 = a0[mask] 
+    R_t = R_t[mask, :]
+    mu_t = mu_t[mask, :]
+    a1 = a1[mask2d].reshape(K_-2, K_-2)
+    Sigma = Sigma[mask2d].reshape(K_-2, K_-2)
+
+    # leverage diagonal property
+    Sigma_diag = np.diag(Sigma)
+    Sigma_sq = Sigma_diag * Sigma_diag.conj()
+    R_inv_t = 1 / R_t
+    noise_t = Sigma_diag / np.sqrt(2) * stdnoise[:, :, mask] * np.sqrt(dt)
+    u_t[:, mask, -1] = mu_t[:, -1][None, :] + np.sqrt(R_t[:, -1] / 2) * stdnoise[-1, :, :][:, mask] # initial condition
+
+    for n in range(N-2, -1, -1):
+        R_inv = R_inv_t[:, n]
+        noise = noise_t[n, :, :]
+        u_t[:, mask, n] = u_t[:, mask, n+1] + np.squeeze((-a0[:, None] - a1@u_t[:, mask, n+1][:, :, None]) * dt) + Sigma_sq * R_inv * (mu_t[:, n] - u_t[:, mask, n+1]) * dt + noise
+        
+    return u_t
+
+
 def mu2psi(mu_t, K, r_cut, style):
     '''
     reshape flattened variables to two modes matrices
@@ -247,41 +282,44 @@ def mu2layer(mu_t, K, r_cut, r1, r2, style):
     return psi1_k_, psi2_k_
     
 
-def back_sampling(N_s, dt, mu_t, R_t, Sigma, a0, a1):
-    K_, N = mu_t.shape
-    u_t = np.zeros((N_s, K_, N), dtype='complex') 
+def R2layer(R_t, K, r_cut, r1, r2, style):
+    '''
+    transform eigenmodes to two-layer modes (flattened matrices)
+    '''
+    R_t_ = R_t.reshape((R_t.shape[0] // 2, 2, -1), order='F')
+    R_psi_k_ = R_t_[:,0,:]
+    R_tau_k_ = R_t_[:,1,:]
+    R_psi1_k_ = np.zeros_like(R_psi_k_)
+    R_psi2_k_ = np.zeros_like(R_psi_k_)
+    r1 = truncate(r1, r_cut, style)
+    r2 = truncate(r2, r_cut, style)
+    for ik in range(R_psi_k_.shape[0]):
+        eigenmat = (np.array([r1[ik, :],r2[ik, :]])**2).T
+        layer = eigenmat @ np.array([R_psi_k_[ik, :],R_tau_k_[ik, :]])
+        R_psi1_k_[ik, :] = layer[0, :]
+        R_psi2_k_[ik, :] = layer[1, :]
+
+    return R_psi1_k_, R_psi2_k_
     
-    # skip mode (0,0)
-    mask = np.ones(K_, dtype=bool) 
-    mask[0] = False
-    mask[K_//2] = False
-    mask2d = np.ones((K_, K_), dtype=bool)
-    mask2d[0, :] = False 
-    mask2d[:, 0] = False
-    mask2d[K_//2, :] = False 
-    mask2d[:, K_//2] = False
-    K_mask = np.sum(mask)
-    a0 = a0[mask] 
-    R_t = R_t[mask, :]
-    mu_t = mu_t[mask, :]
-    a1 = a1[mask2d].reshape(K_-2, K_-2)
-    Sigma = Sigma[mask2d].reshape(K_-2, K_-2)
-    Sigma_sq = Sigma @ Sigma.conj().T
 
-    for n_s in range(N_s):
-        mu0 = mu_t[:, -1]
-        u_t[n_s, mask, -1] = mu0
-        R0 = np.diag(R_t[:, -1])
-        u_t[n_s, mask, -1] = np.random.multivariate_normal(mu0.real, R0.real / 2) + 1j * np.random.multivariate_normal(mu0.imag, R0.real / 2) # assume for now only variance of R_t is saved
+def relative_entropy_gaussian(mu_p, var_p, mu_q, var_q):
+    term1 = np.log(var_q / var_p)
+    term2 = (var_p + (mu_p - mu_q)**2) / var_q
+    relative_entropy = (term1 + term2 - 1) / 2
+    
+    return relative_entropy
 
-    for n in range(N-2, -1, -1):
-        R_inv = np.diag(1 / R_t[:, n])
-        noise = np.diag(Sigma) / np.sqrt(2) * (np.random.randn(N_s, K_mask) + 1j*np.random.randn(N_s, K_mask)) * np.sqrt(dt)
-        ## if correlated noise, need to add extra terms
-        # noise = (Sigma / np.sqrt(2)) @ (noise_r + 1j*noise_i) * np.sqrt(dt)
-        u_t[:, mask, n] = u_t[:, mask, n+1] + np.squeeze((-a0[:, None] - a1@u_t[:, mask, n+1][:, :, None]) * dt + Sigma_sq @ R_inv @ (mu_t[:, n][:, None] - u_t[:, mask, n+1][:, :, None])) * dt + noise
-        
-    return u_t
+
+def relative_entropy_psi_k(psi_k_t, mu_t, R_t, r_cut, style):
+    psi_k_t = truncate(psi_k_t, r_cut, style)
+    K_, N = psi_k_t.shape
+    var_psi = np.var(psi_k_t, axis=1)
+    re = np.zeros((K_, N), dtype=complex)
+
+    for k in range(1, K_):
+        re[k, :] = relative_entropy_gaussian(psi_k_t[k, :], var_psi[k], mu_t[k, :], R_t[k, :])
+    
+    return re
 
 
 class Lagrangian_DA_OU:
@@ -323,7 +361,8 @@ class Lagrangian_DA_OU:
         self.omega = truncate(omega,r_cut, style=style)
         self.sigma = truncate(sigma,r_cut, style=style)
         self.corr_noise = corr_noise
-        
+        self.Sigma_u = np.diag(self.sigma.flatten(order='F'))
+
         if corr_noise:
             cov = kargs['cov']
             cov = truncate(cov, r_cut, style=style)
@@ -343,6 +382,7 @@ class Lagrangian_DA_OU:
         omega = self.omega
         f = self.f
         sigma = self.sigma
+        Sigma_u = self.Sigma_u
 
         if tracer == True:
             psi_k_t = kargs['psi_k_t']
@@ -362,7 +402,6 @@ class Lagrangian_DA_OU:
             R_t[:, 0] = np.diag(R0)  # only save the diagonal elements
             a0 = self.f.flatten(order='F')
             a1 = -np.diag(gamma.flatten(order='F')) + 1j * np.diag(omega.flatten(order='F'))
-            Sigma_u = np.diag(self.sigma.flatten(order='F'))
 
             mu_t, R_t = forward_OU(N, N_chunk, self.K, dt, xt, yt, r1[:, 0], r2[:, 0], mu0, a0, a1, R0, InvBoB, Sigma_u, mu_t, R_t, self.KX, self.KY, self.corr_noise)
 
@@ -536,11 +575,17 @@ class Lagrangian_DA_CG:
             Sigma = np.diag(truncate(sigma,self.r_cut, style=self.style).flatten(order='F')) # assume independent noise for now
             a0 = truncate(f,self.r_cut, style=self.style).flatten(order='F')
             a1 = -np.diag(truncate(gamma,self.r_cut, style=self.style).flatten(order='F')) + 1j * np.diag(truncate(omega,self.r_cut, style=self.style).flatten(order='F')) 
-            psitau_k_s = back_sampling(N_s, dt, mu_eigen_t, R_eigen_t, Sigma, a0, a1)
             mu_t = np.zeros((N_s, K_, N), dtype='complex')  # posterior mean
             mu_t[:, :, 0] = mu0
             R_t = np.zeros((N_s, K_, N), dtype='complex')  # posterior covariance
             R_t[:, :, 0] = np.diag(R0)  # only save the diagonal elements
+
+            # sampling trajectories
+            noise = np.random.randn(self.K, self.K, 2, N, N_s) + 1j * np.random.randn(self.K, self.K, 2, N, N_s)
+            noise = map_conj_symm(noise, r1)
+            noise = truncate(noise, self.r_cut, self.style)
+            noise = np.transpose(np.reshape(noise, (-1, N, N_s), order='F'), (1,2,0))
+            psitau_k_s = back_sampling(N_s, dt, mu_eigen_t, R_eigen_t, Sigma, a0, a1, noise)
 
             for n_s in range(N_s):
                 print(n_s)

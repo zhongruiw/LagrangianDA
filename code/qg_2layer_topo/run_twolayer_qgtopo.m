@@ -38,10 +38,11 @@ t = 0;
 % Initialize topography 
 dx=2*pi/N;
 [X,Y]=meshgrid(-pi:dx:pi-dx,-pi:dx:pi-dx);
-mu = [1, 1.5];
-sigma = [.2 0.0; 0.0 .2];
-F = mvnpdf([X(:) Y(:)], mu, sigma);
-F = reshape(F, size(X));
+% mu = [1, 1.5];
+% sigma = [.2 0.0; 0.0 .2];
+% F = mvnpdf([X(:) Y(:)], mu, sigma);
+% F = reshape(F, size(X));
+F = 0;
 topo = H * (cos(X)+2*cos(2*Y) + 4*F);
 topo = topo-mean(mean(topo));
 global hk 
@@ -57,7 +58,6 @@ Ut = params.U;
 
 % Diagnosticse
 tstart = Nt-200000;
-% tstart = Nt-50000;
 countDiag = 100; % Compute diagnostics every countDiag steps
 T = zeros(1,Nt/countDiag);
 vb = zeros(1,Nt/countDiag);       % flux transport
