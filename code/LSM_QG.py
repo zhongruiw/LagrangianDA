@@ -187,6 +187,7 @@ def calibrate_OU(r1, psi_k_t, tau_k_t, K, dt, Lag, r_cut, style, corr_noise=Fals
                     f4[iky,ikx] = (gamma_est[iky,ikx,0] + gamma_est[iky,ikx,1]) * np.cov(psi_k_t[iky,ikx,:].imag, tau_k_t[iky,ikx,:].imag)[0,1]
 
         pre1 = np.sqrt(f1 * f2 - 2*(f3**2 + f4**2))
+        pre1 = np.nan_to_num(pre1) # f1 * f2 - 2*(f3**2 + f4**2) should be nonnegative analytically, but it may be negative due to numerics
         pre2 = np.sqrt((f1 + f2 - 2 * pre1) / ((f1 - f2)**2 + 8*(f3**2 + f4**2)))
         cov_real = np.sqrt(2) * f3 * pre2
         cov_imag = np.sqrt(2) * f4 * pre2

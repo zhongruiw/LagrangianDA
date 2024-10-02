@@ -122,7 +122,7 @@ def get_A_CG(K, KX, KY, k_index_map, kd, beta, kappa, nu, U, psi1_hat, h_hat):
     return A0, a0, A1, a1
 
 
-def forward_OU(N, N_chunk, K, dt, x, y, r1, r2, mu0, a0, a1, R0, InvBoB, Sigma_u, mu_t, R_t, KX, KY, corr_noise):
+def forward_OU(N, N_chunk, K, dt, x, y, r1, r2, mu0, a0, a1, R0, InvBoB, Sigma_u, mu_t, R_t, KX, KY, corr_noise, s_rate=1):
     # leverage the diagonal matrix property for acceleration
     a1_diag = a1.diagonal()
     if corr_noise == False:
@@ -151,15 +151,18 @@ def forward_OU(N, N_chunk, K, dt, x, y, r1, r2, mu0, a0, a1, R0, InvBoB, Sigma_u
         # Update the posterior mean and posterior covariance
         mu = mu0 + (a0 + a1 @ mu0) * dt + R0_A1_H * InvBoB @ (np.hstack((x_diff, y_diff)) - A1 @ mu0 * dt)
         R = R0 + (a1_diag[:,None] * R0 + R0 * a1_diag.conj() + Sigma_u_sq - R0_A1_H * InvBoB @ R0_A1_H.conj().T) * dt
-        mu_t[:, i] = mu
-        R_t[:, i] = np.diag(R)
         mu0 = mu
         R0 = R
+
+        if i % s_rate == 0:
+            i_sub = int(i / s_rate)
+            mu_t[:, i_sub] = mu
+            R_t[:, i_sub] = np.diag(R)
 
     return mu_t, R_t
 
 
-def forward_OU_flow(N, N_chunk, dt, psi1_k_t, mu0, R0, mu_t, R_t, A0_, A1, a0_, a1, F1, F2, Sigma1, Sigma2, sigma1, sigma2):
+def forward_OU_flow(N, N_chunk, dt, psi1_k_t, mu0, R0, mu_t, R_t, A0_, A1, a0_, a1, F1, F2, Sigma1, Sigma2, sigma1, sigma2, s_rate=1):
     boB = np.diag(sigma1 * Sigma1.conj() + sigma2 * Sigma2.conj())
     InvBoB = 1 / (Sigma1 * Sigma1.conj() + Sigma2 * Sigma2.conj())
     InvBoB[0] = 0
@@ -179,16 +182,21 @@ def forward_OU_flow(N, N_chunk, dt, psi1_k_t, mu0, R0, mu_t, R_t, A0_, A1, a0_, 
         # Update the posterior mean and posterior covariance
         mu = mu0 + (a0 + a1 * mu0) * dt + (boB + R0_A1_H) * InvBoB @ (psi1_diff - (A0 + A1 * mu0) * dt)
         R = R0 + (R0_a1_H.conj().T + R0_a1_H + bob - (boB + R0_A1_H) * InvBoB @ (boB + R0_A1_H).conj().T) * dt
-
-        mu_t[:, i] = mu
-        R_t[:, i] = np.diag(R)
         mu0 = mu
         R0 = R
+
+        if i % s_rate == 0:
+            i_sub = int(i / s_rate)
+            mu_t[:, i_sub] = mu
+            R_t[:, i_sub] = np.diag(R)
 
     return mu_t, R_t
 
 
-def forward_CG(N, N_chunk, dt, K, KX_cut, KY_cut, k_index_map_cut, mu0, R0, InvBoB, sigma_2, mu_t, R_t, kd, beta, kappa, nu, U, psi1_k_t_cut_T, h_k_cut):
+def forward_CG(N, N_chunk, dt, K, KX_cut, KY_cut, k_index_map_cut, mu0, R0, InvBoB, sigma_2, mu_t, R_t, kd, beta, kappa, nu, U, psi1_k_t_cut_T, h_k_cut, s_rate=1):
+    # precompute
+    sigma_2_sq = sigma_2 * np.conjugate(sigma_2)
+
     for i in range(1, N):
         i_chunk = (i-1) % N_chunk
         if i_chunk == 0:
@@ -201,17 +209,19 @@ def forward_CG(N, N_chunk, dt, K, KX_cut, KY_cut, k_index_map_cut, mu0, R0, InvB
 
         # precompute
         a1R0 = a1 @ R0
-        sigma_2_sq = sigma_2 * np.conjugate(sigma_2)
         R0A1_H = R0 @ A1.conj().T
         psi1_diff = psi1_k_t_cut_T[i, :] - psi1_k_t_cut_T[i-1, :]
         
         # Update the posterior mean and posterior covariance
         mu = mu0 + (a0 + a1 @ mu0) * dt + (R0 @ A1.conj().T) * InvBoB @ (psi1_diff - (A0 + A1 @ mu0) * dt)
         R = R0 + (a1R0 + a1R0.conj().T + np.diag(sigma_2_sq) - (R0A1_H) * InvBoB @ R0A1_H.conj().T) * dt
-        mu_t[:, i] = mu
-        R_t[:, i] = np.diag(R)
         mu0 = mu
         R0 = R
+
+        if i % s_rate == 0:
+            i_sub = int(i / s_rate)
+            mu_t[:, i_sub] = mu
+            R_t[:, i_sub] = np.diag(R)
 
     return mu_t, R_t
 
@@ -373,7 +383,7 @@ class Lagrangian_DA_OU:
             self.Sigma_u = self.Sigma_u * np.sqrt(2) # normalization term due to real vs complex white noise
 
 
-    def forward(self, N, N_chunk, dt, tracer=True, **kargs):
+    def forward(self, N, N_chunk, dt, s_rate=1, tracer=True, **kargs):
         r_cut = self.r_cut
         style = self.style
         r1 = self.r1
@@ -383,6 +393,7 @@ class Lagrangian_DA_OU:
         f = self.f
         sigma = self.sigma
         Sigma_u = self.Sigma_u
+        N_sub = int(N//s_rate)
 
         if tracer == True:
             psi_k_t = kargs['psi_k_t']
@@ -394,16 +405,15 @@ class Lagrangian_DA_OU:
             InvBoB = 1 / sigma_xy**2
             mu0 = np.concatenate((truncate(psi_k_t[:,:,0],r_cut, style=style), truncate(tau_k_t[:,:,0],r_cut, style=style))) # assume the initial condition is truth
             K_ = mu0.shape[0]
-            # self.R0 = np.eye(K_, dtype='complex')
-            R0 = np.zeros((K_, K_), dtype='complex')
-            mu_t = np.zeros((K_, N), dtype='complex')  # posterior mean
+            R0 = np.eye(K_, dtype='complex') * 1e-4 # np.zeros((K_, K_), dtype='complex')
+            mu_t = np.zeros((K_, N_sub), dtype='complex')  # posterior mean
             mu_t[:, 0] = mu0
-            R_t = np.zeros((K_, N), dtype='complex')  # posterior covariance
+            R_t = np.zeros((K_, N_sub), dtype='complex')  # posterior covariance
             R_t[:, 0] = np.diag(R0)  # only save the diagonal elements
             a0 = self.f.flatten(order='F')
             a1 = -np.diag(gamma.flatten(order='F')) + 1j * np.diag(omega.flatten(order='F'))
 
-            mu_t, R_t = forward_OU(N, N_chunk, self.K, dt, xt, yt, r1[:, 0], r2[:, 0], mu0, a0, a1, R0, InvBoB, Sigma_u, mu_t, R_t, self.KX, self.KY, self.corr_noise)
+            mu_t, R_t = forward_OU(N, N_chunk, self.K, dt, xt, yt, r1[:, 0], r2[:, 0], mu0, a0, a1, R0, InvBoB, Sigma_u, mu_t, R_t, self.KX, self.KY, self.corr_noise, s_rate)
 
         elif tracer == False:
             psi1_k_t = kargs['psi1_k_t']
@@ -412,10 +422,10 @@ class Lagrangian_DA_OU:
 
             mu0 = truncate(psi2_k_t0, r_cut, style) # assume the initial condition is truth
             K_ = mu0.shape[0]
-            mu_t = np.zeros((K_, N), dtype='complex') # posterior mean
+            mu_t = np.zeros((K_, N_sub), dtype='complex') # posterior mean
             mu_t[:, 0] = mu0
-            R0 = np.zeros((K_, K_), dtype='complex')
-            R_t = np.zeros((K_, N), dtype='complex')  # posterior covariance
+            R0 = np.eye(K_, dtype='complex') * 1e-4 # np.zeros((K_, K_), dtype='complex')
+            R_t = np.zeros((K_, N_sub), dtype='complex')  # posterior covariance
             R_t[:, 0] = np.diag(R0) # only save the diagonal elements
 
             deno = 1 / (r1[:, 0] * r2[:, 1] - r1[:, 1] * r2[:, 0])
@@ -431,7 +441,7 @@ class Lagrangian_DA_OU:
             sigma1 = r1[:, 1] * sigma[:, 0]
             sigma2 = r2[:, 1] * sigma[:, 1]
 
-            mu_t, R_t = forward_OU_flow(N, N_chunk, dt, psi1_k_t.T, mu0, R0, mu_t, R_t, A0_, A1, a0_, a1, F1, F2, Sigma1, Sigma2, sigma1, sigma2)
+            mu_t, R_t = forward_OU_flow(N, N_chunk, dt, psi1_k_t.T, mu0, R0, mu_t, R_t, A0_, A1, a0_, a1, F1, F2, Sigma1, Sigma2, sigma1, sigma2, s_rate)
 
         return mu_t, R_t
 
@@ -530,7 +540,7 @@ class Lagrangian_DA_CG:
         self.k_index_map_cut = k_index_map_cut
 
 
-    def forward(self, N, N_chunk, dt, N_s=1, sigma_1=1., sigma_2=4., **kargs):
+    def forward(self, N, N_chunk, dt, N_s=1, sigma_1=1., sigma_2=4., s_rate=1, **kargs):
         """
         - N: int, total number of steps
         - N_chunk: trunk for calculating DA coefficient matrix
@@ -543,23 +553,23 @@ class Lagrangian_DA_CG:
         psi2_k_t0_cut = truncate(psi2_k_t0, self.r_cut, self.style)
         mu0 = psi2_k_t0_cut # the initial condition posterior mean
         K_ = psi2_k_t0_cut.shape[0] # number of flattened K modes
-        # R0 = np.eye(K_, dtype='complex')
-        R0 = np.zeros((K_,K_), dtype='complex')
+        R0 = np.eye(K_, dtype='complex') * 1e-4 # np.zeros((K_,K_), dtype='complex')
         sigma_1 = sigma_1 * np.ones(K_)
         sigma_2 = sigma_2 * np.ones(K_)        
         InvBoB = 1 / sigma_1**2
         InvBoB[0] = 0 # watch this
+        N_sub = int(N//s_rate)
 
         if N_s == 1:
             psi1_k_t = kargs['psi1_k_t']
             psi1_k_t_cut = truncate(psi1_k_t, self.r_cut, self.style)
             psi1_k_t_cut = np.transpose(psi1_k_t_cut, axes=(1,0)) # psi_hat should be of shape shape (N,k_left)
-            mu_t = np.zeros((K_, N), dtype='complex')  # posterior mean
+            mu_t = np.zeros((K_, N_sub), dtype='complex')  # posterior mean
             mu_t[:, 0] = mu0
-            R_t = np.zeros((K_, N), dtype='complex')  # posterior covariance
+            R_t = np.zeros((K_, N_sub), dtype='complex')  # posterior covariance
             R_t[:, 0] = np.diag(R0)  # only save the diagonal elements
 
-            mu_t, R_t = forward_CG(N, N_chunk, dt, self.K, self.KX_cut, self.KY_cut, self.k_index_map_cut, mu0, R0, InvBoB, sigma_2, mu_t, R_t, self.kd, self.beta, self.kappa, self.nu, self.U, psi1_k_t_cut, self.h_k_cut)
+            mu_t, R_t = forward_CG(N, N_chunk, dt, self.K, self.KX_cut, self.KY_cut, self.k_index_map_cut, mu0, R0, InvBoB, sigma_2, mu_t, R_t, self.kd, self.beta, self.kappa, self.nu, self.U, psi1_k_t_cut, self.h_k_cut, s_rate)
 
             return mu_t, R_t
 
@@ -575,9 +585,9 @@ class Lagrangian_DA_CG:
             Sigma = np.diag(truncate(sigma,self.r_cut, style=self.style).flatten(order='F')) # assume independent noise for now
             a0 = truncate(f,self.r_cut, style=self.style).flatten(order='F')
             a1 = -np.diag(truncate(gamma,self.r_cut, style=self.style).flatten(order='F')) + 1j * np.diag(truncate(omega,self.r_cut, style=self.style).flatten(order='F')) 
-            mu_t = np.zeros((N_s, K_, N), dtype='complex')  # posterior mean
+            mu_t = np.zeros((N_s, K_, N_sub), dtype='complex')  # posterior mean
             mu_t[:, :, 0] = mu0
-            R_t = np.zeros((N_s, K_, N), dtype='complex')  # posterior covariance
+            R_t = np.zeros((N_s, K_, N_sub), dtype='complex')  # posterior covariance
             R_t[:, :, 0] = np.diag(R0)  # only save the diagonal elements
 
             # sampling trajectories
@@ -592,7 +602,7 @@ class Lagrangian_DA_CG:
                 psi1_k_s, _ = mu2layer(psitau_k_s[n_s, :, :], self.K, self.r_cut, r1, r2, self.style)
                 psi1_k_s = np.transpose(psi1_k_s, axes=(1,0)) # psi_hat should be of shape shape (N,k_left)
 
-                mu_t[n_s, :, :], R_t[n_s, :, :] = forward_CG(N, N_chunk, dt, self.K, self.KX_cut, self.KY_cut, self.k_index_map_cut, mu0, R0, InvBoB, sigma_2, mu_t[n_s, :, :], R_t[n_s, :, :], self.kd, self.beta, self.kappa, self.nu, self.U, psi1_k_s, self.h_k_cut)
+                mu_t[n_s, :, :], R_t[n_s, :, :] = forward_CG(N, N_chunk, dt, self.K, self.KX_cut, self.KY_cut, self.k_index_map_cut, mu0, R0, InvBoB, sigma_2, mu_t[n_s, :, :], R_t[n_s, :, :], self.kd, self.beta, self.kappa, self.nu, self.U, psi1_k_s, self.h_k_cut, s_rate)
 
 
             return mu_t, R_t
