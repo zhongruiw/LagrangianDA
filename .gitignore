@@ -43,3 +43,12 @@ code/.DS_Store
 .DS_Store
 code/cgda_ens.py
 code/python.log
+code/lsmda.py
+code/lsmdaL16.py
+code/lsmdaL16b111.py
+code/lsmdaL64.py
+code/lsmdaL64b111.py
+code/Lagrangian_DA/python.log
+code/lsmdaL256.py
+code/lsmdaL256b111.py
+data/lsmda16.log

@@ -24,6 +24,8 @@ def ifftnroll(K, q1_k_t, max_imag_lim=1e-8):
 
 
 def psi2q(psi1_k, psi2_k, kd, h_k):
+    K = psi1_k.shape[0]
+    
     # transpose for proper broadcasting
     psi1_k = np.transpose(psi1_k, axes=(2,0,1))
     psi2_k = np.transpose(psi2_k, axes=(2,0,1))

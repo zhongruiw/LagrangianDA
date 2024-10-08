@@ -5,6 +5,7 @@ from numba.core import types
 from scipy import sparse
 from mode_truc import truncate, inv_truncate
 from conj_symm_tools import avg_conj_symm, map_conj_symm
+import gc
 
 ''' 
 Lagrangian DA 
@@ -67,7 +68,27 @@ def get_A_CG_nonlinear(K, N, k_left, psi1_hat, h_hat, k_index_map, list_dic_k_ma
                 nonlinear_sum_A0[:, ik_] -= det_mn * ((k_sq + kd**2/2) * (m_sq + kd**2/2) * psi1_n*psi1_m)
                 nonlinear_sum_a0[:, ik_] -= det_mn * (kd**2/2 * (m_sq + kd**2/2) * psi1_n*psi1_m)
                 nonlinear_sum_A1[:, ik_, im_] += det_mn * kd**2/2 * (k_sq * psi1_n - h_n)
-                nonlinear_sum_a1[:, ik_, im_] -= det_mn * (k_sq * kd**2/2 * psi1_n + (k_sq + kd**2/2) * h_n) 
+                nonlinear_sum_a1[:, ik_, im_] -= det_mn * (k_sq * kd**2/2 * psi1_n + (k_sq + kd**2/2) * h_n)
+
+    # # another version, faster without numba JIT
+    # for ik_, (k, ik) in enumerate(k_index_map.items()):
+    #     kx, ky = k
+    #     k_sq = kx**2 + ky**2
+    #     ks = np.array(list(k_index_map.keys()))
+    #     mask = ((KX_cut- kx)**2 + (KY_cut- ky)**2) <=r_cut**2
+    #     ms = ks[mask]
+    #     ns = np.array([kx, ky]) - ms
+    #     ins = np.array([np.where((ks == n)[:,0] * (ks == n)[:,1])[0][0] for n in ns])
+    #     det_mn = ms[:, 0]*ns[:, 1] - ms[:, 1]*ns[:, 0]
+    #     m_sq = ms[:, 0]**2 + ms[:, 1]**2
+    #     psi1_n = psi1_hat[:, ins]
+    #     h_n = h_hat[ins]
+    #     psi1_m = psi1_hat[:, mask]
+
+    #     nonlinear_sum_A0[:, ik_] -= np.sum(det_mn * ((k_sq + kd**2/2) * (m_sq + kd**2/2) * psi1_n*psi1_m), axis=1)
+    #     nonlinear_sum_a0[:, ik_] -= np.sum(det_mn * (kd**2/2 * (m_sq + kd**2/2) * psi1_n*psi1_m), axis=1)
+    #     nonlinear_sum_A1[:, ik_, mask] += det_mn * kd**2/2 * (k_sq * psi1_n - h_n)
+    #     nonlinear_sum_a1[:, ik_, mask] -= det_mn * (k_sq * kd**2/2 * psi1_n + (k_sq + kd**2/2) * h_n)
 
     nonlinear_sum_A0 = nonlinear_sum_A0 / K**2
     nonlinear_sum_a0 = nonlinear_sum_a0 / K**2
@@ -272,22 +293,34 @@ def mu2psi(mu_t, K, r_cut, style):
     return psi_k, tau_k
 
 
-def mu2layer(mu_t, K, r_cut, r1, r2, style):
+def mu2layer(mu_t, K, r_cut, r1, r2, style, transpose=False):
     '''
     transform eigenmodes to two-layer modes (flattened matrices)
     '''
     mu_t_ = mu_t.reshape((mu_t.shape[0] // 2, 2, -1), order='F')
     psi_k_ = mu_t_[:,0,:]
     tau_k_ = mu_t_[:,1,:]
-    psi1_k_ = np.zeros_like(psi_k_)
-    psi2_k_ = np.zeros_like(psi_k_)
     r1 = truncate(r1, r_cut, style)
     r2 = truncate(r2, r_cut, style)
-    for ik in range(psi_k_.shape[0]):
-        eigenmat = np.array([r1[ik, :],r2[ik, :]]).T
-        layer = eigenmat @ np.array([psi_k_[ik, :],tau_k_[ik, :]])
-        psi1_k_[ik, :] = layer[0, :]
-        psi2_k_[ik, :] = layer[1, :]
+
+    if transpose:
+        psi1_k_ = np.zeros((psi_k_.shape[1], psi_k_.shape[0]), dtype=complex)
+        psi2_k_ = np.zeros((psi_k_.shape[1], psi_k_.shape[0]), dtype=complex)
+
+        for ik in range(psi_k_.shape[0]):
+            eigenmat = np.array([r1[ik, :],r2[ik, :]]).T
+            layer = eigenmat @ np.array([psi_k_[ik, :],tau_k_[ik, :]])
+            psi1_k_[:, ik] = layer[0, :]
+            psi2_k_[:, ik] = layer[1, :]
+    else:
+        psi1_k_ = np.zeros_like(psi_k_)
+        psi2_k_ = np.zeros_like(psi_k_)
+
+        for ik in range(psi_k_.shape[0]):
+            eigenmat = np.array([r1[ik, :],r2[ik, :]]).T
+            layer = eigenmat @ np.array([psi_k_[ik, :],tau_k_[ik, :]])
+            psi1_k_[ik, :] = layer[0, :]
+            psi2_k_[ik, :] = layer[1, :]
 
     return psi1_k_, psi2_k_
     
@@ -324,10 +357,11 @@ def relative_entropy_psi_k(psi_k_t, mu_t, R_t, r_cut, style):
     psi_k_t = truncate(psi_k_t, r_cut, style)
     K_, N = psi_k_t.shape
     var_psi = np.var(psi_k_t, axis=1)
+    mean_psi = np.mean(psi_k_t, axis=1)
     re = np.zeros((K_, N), dtype=complex)
 
     for k in range(1, K_):
-        re[k, :] = relative_entropy_gaussian(psi_k_t[k, :], var_psi[k], mu_t[k, :], R_t[k, :])
+        re[k, :] = relative_entropy_gaussian(mean_psi[k], var_psi[k], mu_t[k, :], R_t[k, :])
     
     return re
 
@@ -590,20 +624,30 @@ class Lagrangian_DA_CG:
             R_t = np.zeros((N_s, K_, N_sub), dtype='complex')  # posterior covariance
             R_t[:, :, 0] = np.diag(R0)  # only save the diagonal elements
 
-            # sampling trajectories
-            noise = np.random.randn(self.K, self.K, 2, N, N_s) + 1j * np.random.randn(self.K, self.K, 2, N, N_s)
-            noise = map_conj_symm(noise, r1)
-            noise = truncate(noise, self.r_cut, self.style)
-            noise = np.transpose(np.reshape(noise, (-1, N, N_s), order='F'), (1,2,0))
-            psitau_k_s = back_sampling(N_s, dt, mu_eigen_t, R_eigen_t, Sigma, a0, a1, noise)
+            # # sampling trajectories
+            # noise = np.random.randn(self.K, self.K, 2, N, N_s) + 1j * np.random.randn(self.K, self.K, 2, N, N_s)
+            # noise = map_conj_symm(noise, r1)
+            # noise = truncate(noise, self.r_cut, self.style)
+            # noise = np.transpose(np.reshape(noise, (-1, N, N_s), order='F'), (1,2,0))
+            # psitau_k_s = back_sampling(N_s, dt, mu_eigen_t, R_eigen_t, Sigma, a0, a1, noise)
+            # del noise
 
             for n_s in range(N_s):
                 print(n_s)
-                psi1_k_s, _ = mu2layer(psitau_k_s[n_s, :, :], self.K, self.r_cut, r1, r2, self.style)
-                psi1_k_s = np.transpose(psi1_k_s, axes=(1,0)) # psi_hat should be of shape shape (N,k_left)
+
+                # sampling trajectories
+                noise = np.random.randn(self.K, self.K, 2, N, 1) + 1j * np.random.randn(self.K, self.K, 2, N, 1)
+                noise = map_conj_symm(noise, r1)
+                noise = truncate(noise, self.r_cut, self.style)
+                noise = np.transpose(np.reshape(noise, (-1, N, 1), order='F'), (1,2,0))
+                psitau_k_s = back_sampling(1, dt, mu_eigen_t, R_eigen_t, Sigma, a0, a1, noise)
+                del noise
+                gc.collect()  # Explicitly trigger garbage collection
+                psi1_k_s, _ = mu2layer(psitau_k_s[0, :, :], self.K, self.r_cut, r1, r2, self.style, transpose=True) # psi_hat should be of shape (N,k_left)
+                del psitau_k_s
+                gc.collect()  # Explicitly trigger garbage collection
 
                 mu_t[n_s, :, :], R_t[n_s, :, :] = forward_CG(N, N_chunk, dt, self.K, self.KX_cut, self.KY_cut, self.k_index_map_cut, mu0, R0, InvBoB, sigma_2, mu_t[n_s, :, :], R_t[n_s, :, :], self.kd, self.beta, self.kappa, self.nu, self.U, psi1_k_s, self.h_k_cut, s_rate)
-
 
             return mu_t, R_t
 
