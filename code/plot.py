@@ -138,7 +138,7 @@ def plot_psi_k_seriespdf(dt, sel0, sel1, ikx, iky, interv, xlim, ylim, xt, yt, p
 		p = kde.evaluate(xticks)
 		ax55.plot(xticks, p, colors[i], label=labels[i])
 
-	ax2.set_ylabel(r'$Re(\hat{{\psi}}_{{\psi,({:d},{:d})}})$'.format(iky, ikx))
+	ax2.set_ylabel(r'$Re(\hat{{\psi}}_{{\psi,({:d},{:d})}})$'.format(ikx, iky))
 	ax2.legend(prop={'size': 8})
 	ax2.set_xlim(xlim)
 	ax22.set_ylabel(r'$Im(\hat{{\psi}}_{{\psi,({:d},{:d})}})$'.format(ikx, iky))

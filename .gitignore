@@ -52,3 +52,6 @@ code/Lagrangian_DA/python.log
 code/lsmdaL256.py
 code/lsmdaL256b111.py
 data/lsmda16.log
+code/cgda_ensb111L64.py
+code/cgda_ensb22L64.py
+code/lsmdaL64b22.py

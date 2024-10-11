@@ -247,20 +247,30 @@ def forward_CG(N, N_chunk, dt, K, KX_cut, KY_cut, k_index_map_cut, mu0, R0, InvB
     return mu_t, R_t
 
 
-def back_sampling(N_s, dt, mu_t, R_t, Sigma, a0, a1, stdnoise):
+# @jit(nopython=True)
+def back_sampling(N, dt, R_inv_t, noise_t, u_t, mask, a0, a1, Sigma_sq, mu_t):
+    # # accomodation to numba, bool indexing to array indexing
+    # mask = np.where(mask)[0]
+
+    for n in range(N-2, -1, -1):
+        R_inv = R_inv_t[:, n]
+        noise = noise_t[n, :, :]
+        u_t[:, mask, n] = u_t[:, mask, n+1] + ((-a0[:, None] - a1@u_t[:, mask, n+1][:, :, None]) * dt)[:, :, 0] + Sigma_sq * R_inv * (mu_t[:, n] - u_t[:, mask, n+1]) * dt + noise
+        
+    return u_t
+
+
+def sampling(N_s, dt, mu_t, R_t, Sigma, a0, a1, stdnoise):
     K_, N = mu_t.shape
     u_t = np.zeros((N_s, K_, N), dtype='complex') 
     
     # skip mode (0,0)
-    mask = np.ones(K_, dtype=bool) 
-    mask[0] = False
-    mask[K_//2] = False
-    mask2d = np.ones((K_, K_), dtype=bool)
-    mask2d[0, :] = False 
-    mask2d[:, 0] = False
-    mask2d[K_//2, :] = False 
-    mask2d[:, K_//2] = False
+    mask = np.ones(K_, dtype=np.bool_) 
+    mask[0] = mask[K_//2] = False
+    mask2d = np.ones((K_, K_), dtype=np.bool_)
+    mask2d[0, :] = mask2d[:, 0] = mask2d[K_//2, :] = mask2d[:, K_//2] = False
     K_mask = np.sum(mask)
+
     a0 = a0[mask] 
     R_t = R_t[mask, :]
     mu_t = mu_t[mask, :]
@@ -273,12 +283,9 @@ def back_sampling(N_s, dt, mu_t, R_t, Sigma, a0, a1, stdnoise):
     R_inv_t = 1 / R_t
     noise_t = Sigma_diag / np.sqrt(2) * stdnoise[:, :, mask] * np.sqrt(dt)
     u_t[:, mask, -1] = mu_t[:, -1][None, :] + np.sqrt(R_t[:, -1] / 2) * stdnoise[-1, :, :][:, mask] # initial condition
+ 
+    u_t = back_sampling(N, dt, R_inv_t, noise_t, u_t, mask, a0, a1, Sigma_sq, mu_t)
 
-    for n in range(N-2, -1, -1):
-        R_inv = R_inv_t[:, n]
-        noise = noise_t[n, :, :]
-        u_t[:, mask, n] = u_t[:, mask, n+1] + np.squeeze((-a0[:, None] - a1@u_t[:, mask, n+1][:, :, None]) * dt) + Sigma_sq * R_inv * (mu_t[:, n] - u_t[:, mask, n+1]) * dt + noise
-        
     return u_t
 
 
@@ -640,7 +647,7 @@ class Lagrangian_DA_CG:
                 noise = map_conj_symm(noise, r1)
                 noise = truncate(noise, self.r_cut, self.style)
                 noise = np.transpose(np.reshape(noise, (-1, N, 1), order='F'), (1,2,0))
-                psitau_k_s = back_sampling(1, dt, mu_eigen_t, R_eigen_t, Sigma, a0, a1, noise)
+                psitau_k_s = sampling(1, dt, mu_eigen_t, R_eigen_t, Sigma, a0, a1, noise)
                 del noise
                 gc.collect()  # Explicitly trigger garbage collection
                 psi1_k_s, _ = mu2layer(psitau_k_s[0, :, :], self.K, self.r_cut, r1, r2, self.style, transpose=True) # psi_hat should be of shape (N,k_left)
