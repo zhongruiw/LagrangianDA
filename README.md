@@ -1,2 +1,2 @@
 # LagrangianDA
- CG reduced-order model based on QG model, and Langrange data assimilation
+ CG reduced-order model based on two-layer QG model, and Lagrangian data assimilation
