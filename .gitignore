@@ -55,3 +55,12 @@ data/lsmda16.log
 code/cgda_ensb111L64.py
 code/cgda_ensb22L64.py
 code/lsmdaL64b22.py
+/paper_AMS
+code/cgda_ensb22L256.py
+code/cgda_ens128b22L64.py
+code/cgda_ens128b22L64_2.py
+code/cgda_ens8b22L64.py
+code/cgda_ensb22L16.py
+code/cgdaens128L64b22.log
+code/cgdaens8L64b22.log
+code/lsmdaL64b22_corr.py
