@@ -5,6 +5,7 @@ from numba.core import types
 from scipy import sparse
 from mode_truc import truncate, inv_truncate
 from conj_symm_tools import avg_conj_symm, map_conj_symm
+from sklearn.linear_model import LinearRegression
 import gc
 
 ''' 
@@ -143,6 +144,70 @@ def get_A_CG(K, KX, KY, k_index_map, kd, beta, kappa, nu, U, psi1_hat, h_hat):
     return A0, a0, A1, a1
 
 
+def get_A_CG_cali(K, KX, KY, k_index_map, kd, psi1_hat, h_hat, omega1, omega2, gamma1, gamma2, f1, f2):
+    N, k_left = psi1_hat.shape
+    
+    # Precompute constants
+    K_squared = KX**2 + KY**2
+    invCk = K_squared * (K_squared + kd**2)
+    list_dic_k_map = list(k_index_map.keys())
+
+    # linear part for A0, a0, A1 and a1
+    linear_A0 = (-gamma1[0, :] + 1j * omega1[0, :]) * psi1_hat + f1
+    linear_a0 = (1j * omega2[0, :]) * psi1_hat + f2
+    linear_A1_diag = (-gamma1[1, :] + 1j * omega1[1, :])
+    linear_a1_diag = (-gamma2 + 1j * omega2[1, :])
+    linear_A1 = np.tile(np.diag(linear_A1_diag)[None,:,:], (N,1,1)) 
+    linear_a1 = np.tile(np.diag(linear_a1_diag)[None,:,:], (N,1,1)) 
+    
+    nonlinear_sum_A0, nonlinear_sum_a0, nonlinear_sum_A1, nonlinear_sum_a1 = get_A_CG_nonlinear(K, N, k_left, psi1_hat, h_hat, k_index_map, list_dic_k_map, kd)
+
+    # normalization 
+    Ck = 1 / invCk
+    Ck[K_squared == 0] = 0  # avoid division by zero at k = 0, constant mode
+    Ck_ = np.tile(Ck[None,:,None], (N,1,k_left))
+    nonlinear_sum_A0 = Ck * nonlinear_sum_A0
+    nonlinear_sum_a0 = Ck * nonlinear_sum_a0
+    nonlinear_sum_A1 = Ck_ * nonlinear_sum_A1
+    nonlinear_sum_a1 = Ck_ * nonlinear_sum_a1
+    
+    # aggregate 
+    A0 = linear_A0 + nonlinear_sum_A0
+    a0 = linear_a0 + nonlinear_sum_a0
+    A1 = linear_A1 + nonlinear_sum_A1
+    a1 = linear_a1 + nonlinear_sum_a1
+    
+    return A0, a0, A1, a1
+
+
+def get_A_CG_jacobi(K, KX, KY, k_index_map, kd, psi1_hat, h_hat):
+    N, k_left = psi1_hat.shape
+    
+    # Precompute constants
+    K_squared = KX**2 + KY**2
+    invCk = K_squared * (K_squared + kd**2)
+    list_dic_k_map = list(k_index_map.keys())
+
+    nonlinear_sum_A0, nonlinear_sum_a0, nonlinear_sum_A1, nonlinear_sum_a1 = get_A_CG_nonlinear(K, N, k_left, psi1_hat, h_hat, k_index_map, list_dic_k_map, kd)
+
+    # aggregate 
+    A0 = nonlinear_sum_A0
+    a0 = nonlinear_sum_a0
+    A1 = nonlinear_sum_A1
+    a1 = nonlinear_sum_a1
+    
+    # normalization 
+    Ck = 1 / invCk
+    Ck[K_squared == 0] = 0  # avoid division by zero at k = 0, constant mode
+    Ck_ = np.tile(Ck[None,:,None], (N,1,k_left))
+    A0 = Ck * A0
+    a0 = Ck * a0
+    A1 = Ck_ * A1
+    a1 = Ck_ * a1
+    
+    return A0, a0, A1, a1
+
+
 def forward_OU(N, N_chunk, K, dt, x, y, r1, r2, mu0, a0, a1, R0, InvBoB, Sigma_u, mu_t, R_t, KX, KY, corr_noise, s_rate=1):
     # leverage the diagonal matrix property for acceleration
     a1_diag = a1.diagonal()
@@ -214,35 +279,58 @@ def forward_OU_flow(N, N_chunk, dt, psi1_k_t, mu0, R0, mu_t, R_t, A0_, A1, a0_, 
     return mu_t, R_t
 
 
-def forward_CG(N, N_chunk, dt, K, KX_cut, KY_cut, k_index_map_cut, mu0, R0, InvBoB, sigma_2, mu_t, R_t, kd, beta, kappa, nu, U, psi1_k_t_cut_T, h_k_cut, s_rate=1):
+def forward_CG(N, N_chunk, dt, K, KX_cut, KY_cut, k_index_map_cut, mu0, R0, InvBoB, sigma_2, mu_t, R_t, kd, beta, kappa, nu, U, psi1_k_t_cut_T, h_k_cut, s_rate=1, forward_R=True):
     # precompute
     sigma_2_sq = sigma_2 * np.conjugate(sigma_2)
 
-    for i in range(1, N):
-        i_chunk = (i-1) % N_chunk
-        if i_chunk == 0:
-            A0_t, a0_t, A1_t, a1_t= get_A_CG(K, KX_cut, KY_cut, k_index_map_cut, kd, beta, kappa, nu, U, psi1_k_t_cut_T[i-1:i-1+N_chunk,:], h_k_cut)
-        
-        A0 = A0_t[i_chunk, :]
-        a0 = a0_t[i_chunk, :]
-        A1 = A1_t[i_chunk, :, :]
-        a1 = a1_t[i_chunk, :, :]
+    if forward_R == True:
+        for i in range(1, N):
+            i_chunk = (i-1) % N_chunk
+            if i_chunk == 0:
+                A0_t, a0_t, A1_t, a1_t= get_A_CG(K, KX_cut, KY_cut, k_index_map_cut, kd, beta, kappa, nu, U, psi1_k_t_cut_T[i-1:i-1+N_chunk,:], h_k_cut)
+            
+            A0 = A0_t[i_chunk, :]
+            a0 = a0_t[i_chunk, :]
+            A1 = A1_t[i_chunk, :, :]
+            a1 = a1_t[i_chunk, :, :]
 
-        # precompute
-        a1R0 = a1 @ R0
-        R0A1_H = R0 @ A1.conj().T
-        psi1_diff = psi1_k_t_cut_T[i, :] - psi1_k_t_cut_T[i-1, :]
-        
-        # Update the posterior mean and posterior covariance
-        mu = mu0 + (a0 + a1 @ mu0) * dt + (R0 @ A1.conj().T) * InvBoB @ (psi1_diff - (A0 + A1 @ mu0) * dt)
-        R = R0 + (a1R0 + a1R0.conj().T + np.diag(sigma_2_sq) - (R0A1_H) * InvBoB @ R0A1_H.conj().T) * dt
-        mu0 = mu
-        R0 = R
+            # precompute
+            a1R0 = a1 @ R0
+            R0A1_H = R0 @ A1.conj().T
+            psi1_diff = psi1_k_t_cut_T[i, :] - psi1_k_t_cut_T[i-1, :]
+            
+            # Update the posterior mean and posterior covariance
+            mu = mu0 + (a0 + a1 @ mu0) * dt + (R0 @ A1.conj().T) * InvBoB @ (psi1_diff - (A0 + A1 @ mu0) * dt)
+            R = R0 + (a1R0 + a1R0.conj().T + np.diag(sigma_2_sq) - (R0A1_H) * InvBoB @ R0A1_H.conj().T) * dt
+            mu0 = mu
+            R0 = R
 
-        if i % s_rate == 0:
-            i_sub = int(i / s_rate)
-            mu_t[:, i_sub] = mu
-            R_t[:, i_sub] = np.diag(R)
+            if i % s_rate == 0:
+                i_sub = int(i / s_rate)
+                mu_t[:, i_sub] = mu
+                R_t[:, i_sub] = np.diag(R)
+    else:
+        for i in range(1, N):
+            i_chunk = (i-1) % N_chunk
+            if i_chunk == 0:
+                A0_t, a0_t, A1_t, a1_t= get_A_CG(K, KX_cut, KY_cut, k_index_map_cut, kd, beta, kappa, nu, U, psi1_k_t_cut_T[i-1:i-1+N_chunk,:], h_k_cut)
+            
+            A0 = A0_t[i_chunk, :]
+            a0 = a0_t[i_chunk, :]
+            A1 = A1_t[i_chunk, :, :]
+            a1 = a1_t[i_chunk, :, :]
+
+            # precompute
+            psi1_diff = psi1_k_t_cut_T[i, :] - psi1_k_t_cut_T[i-1, :]
+            
+            # Update the posterior mean and posterior covariance
+            mu = mu0 + (a0 + a1 @ mu0) * dt + (R0 @ A1.conj().T) * InvBoB @ (psi1_diff - (A0 + A1 @ mu0) * dt)
+            mu0 = mu
+
+            if i % s_rate == 0:
+                i_sub = int(i / s_rate)
+                mu_t[:, i_sub] = mu
+                R_t[:, i_sub] = np.diag(R0)
 
     return mu_t, R_t
 
@@ -581,7 +669,7 @@ class Lagrangian_DA_CG:
         self.k_index_map_cut = k_index_map_cut
 
 
-    def forward(self, N, N_chunk, dt, N_s=1, sigma_1=1., sigma_2=4., s_rate=1, **kargs):
+    def forward(self, N, N_chunk, dt, N_s=1, sigma_1=1., sigma_2=4., s_rate=1, R0=None, forward_R=True, **kargs):
         """
         - N: int, total number of steps
         - N_chunk: trunk for calculating DA coefficient matrix
@@ -594,7 +682,8 @@ class Lagrangian_DA_CG:
         psi2_k_t0_cut = truncate(psi2_k_t0, self.r_cut, self.style)
         mu0 = psi2_k_t0_cut # the initial condition posterior mean
         K_ = psi2_k_t0_cut.shape[0] # number of flattened K modes
-        R0 = np.eye(K_, dtype='complex') * 1e-4 # np.zeros((K_,K_), dtype='complex')
+        if R0 is None:
+            R0 = np.eye(K_, dtype='complex') * 1e-4 # np.zeros((K_,K_), dtype='complex')
         sigma_1 = sigma_1 * np.ones(K_)
         sigma_2 = sigma_2 * np.ones(K_)        
         InvBoB = 1 / sigma_1**2
@@ -610,7 +699,7 @@ class Lagrangian_DA_CG:
             R_t = np.zeros((K_, N_sub), dtype='complex')  # posterior covariance
             R_t[:, 0] = np.diag(R0)  # only save the diagonal elements
 
-            mu_t, R_t = forward_CG(N, N_chunk, dt, self.K, self.KX_cut, self.KY_cut, self.k_index_map_cut, mu0, R0, InvBoB, sigma_2, mu_t, R_t, self.kd, self.beta, self.kappa, self.nu, self.U, psi1_k_t_cut, self.h_k_cut, s_rate)
+            mu_t, R_t = forward_CG(N, N_chunk, dt, self.K, self.KX_cut, self.KY_cut, self.k_index_map_cut, mu0, R0, InvBoB, sigma_2, mu_t, R_t, self.kd, self.beta, self.kappa, self.nu, self.U, psi1_k_t_cut, self.h_k_cut, s_rate, forward_R)
 
             return mu_t, R_t
 
@@ -631,14 +720,6 @@ class Lagrangian_DA_CG:
             R_t = np.zeros((N_s, K_, N_sub), dtype='complex')  # posterior covariance
             R_t[:, :, 0] = np.diag(R0)  # only save the diagonal elements
 
-            # # sampling trajectories
-            # noise = np.random.randn(self.K, self.K, 2, N, N_s) + 1j * np.random.randn(self.K, self.K, 2, N, N_s)
-            # noise = map_conj_symm(noise, r1)
-            # noise = truncate(noise, self.r_cut, self.style)
-            # noise = np.transpose(np.reshape(noise, (-1, N, N_s), order='F'), (1,2,0))
-            # psitau_k_s = back_sampling(N_s, dt, mu_eigen_t, R_eigen_t, Sigma, a0, a1, noise)
-            # del noise
-
             for n_s in range(N_s):
                 print(n_s)
 
@@ -654,11 +735,11 @@ class Lagrangian_DA_CG:
                 del psitau_k_s
                 gc.collect()  # Explicitly trigger garbage collection
 
-                mu_t[n_s, :, :], R_t[n_s, :, :] = forward_CG(N, N_chunk, dt, self.K, self.KX_cut, self.KY_cut, self.k_index_map_cut, mu0, R0, InvBoB, sigma_2, mu_t[n_s, :, :], R_t[n_s, :, :], self.kd, self.beta, self.kappa, self.nu, self.U, psi1_k_s, self.h_k_cut, s_rate)
+                mu_t[n_s, :, :], R_t[n_s, :, :] = forward_CG(N, N_chunk, dt, self.K, self.KX_cut, self.KY_cut, self.k_index_map_cut, mu0, R0, InvBoB, sigma_2, mu_t[n_s, :, :], R_t[n_s, :, :], self.kd, self.beta, self.kappa, self.nu, self.U, psi1_k_s, self.h_k_cut, s_rate, forward_R)
 
             return mu_t, R_t
 
-    def forward_model(self, N, dt, psi1_k_t0, psi2_k_t0):
+    def forward_model(self, N, dt, psi1_k_t0, psi2_k_t0, cali=False, **kargs):
         '''
         CG bare truncation model free forecast
         '''
@@ -683,19 +764,69 @@ class Lagrangian_DA_CG:
         psi1_k_t[:, 0] = psi1_k_t0
         psi2_k_t[:, 0] = psi2_k_t0
 
-        for i in range(1, N):
-            A0, a0, A1, a1= get_A_CG(K, KX_cut, KY_cut, k_index_map_cut, kd, beta, kappa, nu, U, psi1_k_t[:, i-1][None, :], h_k_cut)
-            
-            A0 = np.squeeze(A0)
-            a0 = np.squeeze(a0)
-            A1 = np.squeeze(A1)
-            a1 = np.squeeze(a1)
+        if cali == 'all':
+            coef1 = kargs['coef1']
+            coef2 = kargs['coef2']
+            # upper layer
+            omega1 = coef1[:2, :] 
+            gamma1 = coef1[2:4, :]
+            f1 = coef1[4, :] + 1j * coef1[5, :]
+            # lower layer
+            omega2 = coef2[:2, :]
+            gamma2 = coef2[2, :]
+            f2 = coef2[3, :] + 1j * coef2[4, :]
+            r1 = np.ones((K, K, 1))
+            noise = np.random.randn(K, K, 2, N) + 1j * np.random.randn(K, K, 2, N)
+            noise = map_conj_symm(noise, r1)
+            noise = truncate(noise, r_cut, style) # shape (K_, 2, N)
 
-            # forward integration
-            psi1_k_t[:, i] = psi1_k_t[:, i-1] + (A0 + A1 @ psi2_k_t[:, i-1]) * dt
-            psi2_k_t[:, i] = psi2_k_t[:, i-1] + (a0 + a1 @ psi2_k_t[:, i-1]) * dt
+            for i in range(1, N):
+                A0, a0, A1, a1= get_A_CG_cali(K, KX_cut, KY_cut, k_index_map_cut, kd, psi1_k_t[:, i-1][None, :], h_k_cut, omega1, omega2, gamma1, gamma2, f1, f2)
+                
+                A0 = np.squeeze(A0)
+                a0 = np.squeeze(a0)
+                A1 = np.squeeze(A1)
+                a1 = np.squeeze(a1)
+
+                # forward integration        
+                psi1_k_t[:, i] = psi1_k_t[:, i-1] + (A0 + A1 @ psi2_k_t[:, i-1]) * dt + sigma_1 * noise[:, 0, i] * np.sqrt(dt)
+                psi2_k_t[:, i] = psi2_k_t[:, i-1] + (a0 + a1 @ psi2_k_t[:, i-1]) * dt + sigma_2 * noise[:, 1, i] * np.sqrt(dt)
+
+        elif cali == 'sigma':
+            sigma_1 = kargs['sigma_1'] * np.ones(K_)
+            sigma_2 = kargs['sigma_2'] * np.ones(K_)
+            r1 = np.ones((K, K, 1))
+            noise = np.random.randn(K, K, 2, N) + 1j * np.random.randn(K, K, 2, N)
+            noise = map_conj_symm(noise, r1)
+            noise = truncate(noise, r_cut, style) # shape (K_, 2, N)
+
+            for i in range(1, N):
+                A0, a0, A1, a1= get_A_CG(K, KX_cut, KY_cut, k_index_map_cut, kd, beta, kappa, nu, U, psi1_k_t[:, i-1][None, :], h_k_cut)
+                
+                A0 = np.squeeze(A0)
+                a0 = np.squeeze(a0)
+                A1 = np.squeeze(A1)
+                a1 = np.squeeze(a1)
+
+                # forward integration
+                psi1_k_t[:, i] = psi1_k_t[:, i-1] + (A0 + A1 @ psi2_k_t[:, i-1]) * dt + sigma_1 * noise[:, 0, i] * np.sqrt(dt)
+                psi2_k_t[:, i] = psi2_k_t[:, i-1] + (a0 + a1 @ psi2_k_t[:, i-1]) * dt + sigma_2 * noise[:, 1, i] * np.sqrt(dt)
+
+        elif cali == False:
+            for i in range(1, N):
+                A0, a0, A1, a1= get_A_CG(K, KX_cut, KY_cut, k_index_map_cut, kd, beta, kappa, nu, U, psi1_k_t[:, i-1][None, :], h_k_cut)
+                
+                A0 = np.squeeze(A0)
+                a0 = np.squeeze(a0)
+                A1 = np.squeeze(A1)
+                a1 = np.squeeze(a1)
+
+                # forward integration
+                psi1_k_t[:, i] = psi1_k_t[:, i-1] + (A0 + A1 @ psi2_k_t[:, i-1]) * dt
+                psi2_k_t[:, i] = psi2_k_t[:, i-1] + (a0 + a1 @ psi2_k_t[:, i-1]) * dt
 
         return psi1_k_t, psi2_k_t
+
 
     def calibrate_sigma(self, N_chunk, dt, psi1_k_t, psi2_k_t):
         r_cut = self.r_cut
@@ -729,4 +860,63 @@ class Lagrangian_DA_CG:
         Sigma2 = np.std(res2 / np.sqrt(dt), axis=0)
 
         return Sigma1, Sigma2
-                    
+
+
+    def calibrate_CG(self, N, N_chunk, psi1_k_t, psi2_k_t, h_k, K, dt, r_cut, style):
+        r_cut = self.r_cut
+        style = self.style
+        psi1_k_t_cut = truncate(psi1_k_t, r_cut, style)
+        psi2_k_t_cut = truncate(psi2_k_t, r_cut, style)
+        h_k_cut = self.h_k_cut
+        K_cut_ = psi1_k_t_cut.shape[0]
+
+        # RHS
+        rhs1 = np.zeros((N-1, K_cut_), dtype=complex)
+        rhs2 = np.zeros((N-1, K_cut_), dtype=complex)
+        for i in range(1, N):
+            i_chunk = (i-1) % N_chunk
+            if i_chunk == 0:
+                A0_t, a0_t, A1_t, a1_t= get_A_CG_jacobi(K, self.KX_cut, self.KY_cut, self.k_index_map_cut, kd, psi1_k_t_cut[:,i-1:i-1+N_chunk].T, h_k_cut)
+            
+            A0 = A0_t[i_chunk, :]
+            a0 = a0_t[i_chunk, :]
+            A1 = A1_t[i_chunk, :, :]
+            a1 = a1_t[i_chunk, :, :]
+            
+            # forward integration
+            rhs1[i-1, :] = psi1_k_t_cut[:, i] - psi1_k_t_cut[:, i-1] - (A0 + A1 @ psi2_k_t_cut[:, i-1]) * dt
+            rhs2[i-1, :] = psi2_k_t_cut[:, i] - psi2_k_t_cut[:, i-1] - (a0 + a1 @ psi2_k_t_cut[:, i-1]) * dt
+
+        # Regression calibratation
+        coef1 = np.zeros((6,K_cut_))
+        coef2 = np.zeros((5,K_cut_))
+        # intc1 = np.zeros(K_cut_)
+        # intc2 = np.zeros(K_cut_)
+        sigma1 = np.zeros(K_cut_)
+        sigma2 = np.zeros(K_cut_)
+        h_k_cut_t = np.repeat(h_k_cut[:, None], N, axis=1)
+        const0 = np.zeros(N)
+        const1 = np.ones(N)
+        for ik in range(K_cut_):
+            X1_real = np.stack((-psi1_k_t_cut[ik, :N-1].imag, -psi2_k_t_cut[ik, :N-1].imag, -psi1_k_t_cut[ik, :N-1].real, -psi2_k_t_cut[ik, :N-1].real, const1[:N-1], const0[:N-1]), axis=1)
+            X1_imag = np.stack((psi1_k_t_cut[ik, :N-1].real, psi2_k_t_cut[ik, :N-1].real, -psi1_k_t_cut[ik, :N-1].imag, -psi2_k_t_cut[ik, :N-1].imag, const0[:N-1], const1[:N-1]), axis=1)
+            X1_all = np.concatenate((X1_real, X1_imag), axis=0)
+            X2_real = np.stack((-psi1_k_t_cut[ik, :N-1].imag, -psi2_k_t_cut[ik, :N-1].imag, -psi2_k_t_cut[ik, :N-1].real, const1[:N-1], const0[:N-1]), axis=1)
+            X2_imag = np.stack((psi1_k_t_cut[ik, :N-1].real, psi2_k_t_cut[ik, :N-1].real, -psi2_k_t_cut[ik, :N-1].imag, const0[:N-1], const1[:N-1]), axis=1)
+            X2_all = np.concatenate((X2_real, X2_imag), axis=0)
+            Y1_all = np.concatenate((rhs1[:, ik].real, rhs1[:, ik].imag), axis=0)
+            Y2_all = np.concatenate((rhs2[:, ik].real, rhs2[:, ik].imag), axis=0)
+            
+            reg1 = LinearRegression(fit_intercept=False).fit(X1_all, Y1_all)
+            coef1[:, ik] = reg1.coef_
+            # intc1[ik] = reg1.intercept_
+            res1 = Y1_all - reg1.predict(X1_all)
+            sigma1[ik] = np.std(res1)
+            reg2 = LinearRegression(fit_intercept=False).fit(X2_all, Y2_all)
+            coef2[:, ik] = reg2.coef_
+            # intc2[ik] = reg2.intercept_
+            res2 = Y2_all - reg2.predict(X2_all)
+            sigma2[ik] = np.std(res2)
+
+        return coef1/dt, coef2/dt, sigma1/np.sqrt(dt), sigma2/np.sqrt(dt)
+                        

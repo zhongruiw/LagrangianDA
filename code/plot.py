@@ -3,6 +3,10 @@ import numpy as np
 from matplotlib.ticker import FormatStrFormatter
 from matplotlib.gridspec import GridSpec
 from scipy.stats import gaussian_kde, norm
+from mode_truc import inv_truncate, truncate
+from scipy.ndimage import gaussian_filter1d
+from scipy.stats import skew, kurtosis
+from matplotlib.animation import FuncAnimation, PillowWriter
 
 
 def ifftnroll(K, q1_k_t, max_imag_lim=1e-8):
@@ -237,61 +241,61 @@ def plot_psi_k_seriespdf(dt, sel0, sel1, ikx, iky, interv, xlim, ylim, xt, yt, p
 
 def plot_psi1_k_seriespdf(dt, sel0, sel1, ikx, iky, interv, xlim, ylim, xt, yt, psi1_k, psi2_k, labels, colors):
     xaxis = np.arange(sel0*dt, sel1*dt, interv*dt)
-    fig = plt.figure(figsize=(16,5))
+    fig = plt.figure(figsize=(16,3.2))
     widths = [5, 1, 5, 1]
-    heights = [2, 2, 2]
-    spec = fig.add_gridspec(ncols=4, nrows=3, width_ratios=widths, height_ratios=heights)
+    heights = [2, 2]
+    spec = fig.add_gridspec(ncols=4, nrows=2, width_ratios=widths, height_ratios=heights)
     
     plt.subplots_adjust(wspace=0.35, hspace=0.5)     # Adjust the overall spacing of the figure
-    ax1 = fig.add_subplot(spec[0, 0])
-    ax2 = fig.add_subplot(spec[1, 0])
-    ax3 = fig.add_subplot(spec[2, 0])
-    ax4 = fig.add_subplot(spec[0, 1])
-    ax5 = fig.add_subplot(spec[1, 1])
-    ax6 = fig.add_subplot(spec[2, 1])
-    ax11 = fig.add_subplot(spec[0, 2])
-    ax22 = fig.add_subplot(spec[1, 2])
-    ax33 = fig.add_subplot(spec[2, 2])
-    ax44 = fig.add_subplot(spec[0, 3])
-    ax55 = fig.add_subplot(spec[1, 3])
-    ax66 = fig.add_subplot(spec[2, 3])
+    # ax1 = fig.add_subplot(spec[0, 0])
+    ax2 = fig.add_subplot(spec[0, 0])
+    ax3 = fig.add_subplot(spec[1, 0])
+    # ax4 = fig.add_subplot(spec[0, 1])
+    ax5 = fig.add_subplot(spec[0, 1])
+    ax6 = fig.add_subplot(spec[1, 1])
+    # ax11 = fig.add_subplot(spec[0, 2])
+    ax22 = fig.add_subplot(spec[0, 2])
+    ax33 = fig.add_subplot(spec[1, 2])
+    # ax44 = fig.add_subplot(spec[0, 3])
+    ax55 = fig.add_subplot(spec[0, 3])
+    ax66 = fig.add_subplot(spec[1, 3])
     
-    # plot time series
-    ax1.plot(xaxis, xt[0,sel0:sel1:interv], 'k',label='x')
-    ax1.set_xlim(sel0*dt, sel1*dt)
-    ax1.set_ylabel('x')
-    ax1.set_title('time series')
-    ax1.set_xlim(xlim)
+    # # plot time series
+    # ax1.plot(xaxis, xt[0,sel0:sel1:interv], 'k',label='x')
+    # ax1.set_xlim(sel0*dt, sel1*dt)
+    # ax1.set_ylabel('x')
+    # ax1.set_title('time series')
+    # ax1.set_xlim(xlim)
     
-    ax11.plot(xaxis, yt[0,sel0:sel1:interv], 'k')
-    ax11.set_xlim(sel0*dt, sel1*dt)
-    ax11.set_ylabel('y')
-    ax11.set_title('time series')
-    ax11.set_xlim(xlim)
+    # ax11.plot(xaxis, yt[0,sel0:sel1:interv], 'k')
+    # ax11.set_xlim(sel0*dt, sel1*dt)
+    # ax11.set_ylabel('y')
+    # ax11.set_title('time series')
+    # ax11.set_xlim(xlim)
     
-    # plot pdf
-    samples = xt[0, :]
-    kde = gaussian_kde(samples)
-    xticks = np.linspace(samples.min(), samples.max(), 100)
-    p = kde.evaluate(xticks)
-    ax4.plot(xticks, p, 'k')
-    mean, std = samples.mean(), samples.std() # Fit a Gaussian to the same data
-    gaussian_pdf = norm.pdf(xticks, mean, std)  # Calculate the Gaussian PDF
-    ax4.plot(xticks, gaussian_pdf, 'k--', label='Fitted Gaussian')  # Dashed line for Gaussian
-    ax4.set_title('PDF')
-    ax4.set_yscale('log', base=10) 
+    # # plot pdf
+    # samples = xt[0, :]
+    # kde = gaussian_kde(samples)
+    # xticks = np.linspace(samples.min(), samples.max(), 100)
+    # p = kde.evaluate(xticks)
+    # ax4.plot(xticks, p, 'k')
+    # mean, std = samples.mean(), samples.std() # Fit a Gaussian to the same data
+    # gaussian_pdf = norm.pdf(xticks, mean, std)  # Calculate the Gaussian PDF
+    # ax4.plot(xticks, gaussian_pdf, 'k--', label='Fitted Gaussian')  # Dashed line for Gaussian
+    # ax4.set_title('PDF')
+    # ax4.set_yscale('log', base=10) 
     
-    # plot pdf
-    samples = yt[0, sel0:sel1]
-    kde = gaussian_kde(samples)
-    xticks = np.linspace(samples.min(), samples.max(), 100)
-    p = kde.evaluate(xticks)
-    ax44.plot(xticks, p, 'k')
-    mean, std = samples.mean(), samples.std() # Fit a Gaussian to the same data
-    gaussian_pdf = norm.pdf(xticks, mean, std)  # Calculate the Gaussian PDF
-    ax44.plot(xticks, gaussian_pdf, 'k--', label='Fitted Gaussian')  # Dashed line for Gaussian
-    ax44.set_title('PDF')
-    ax44.set_yscale('log', base=10) 
+    # # plot pdf
+    # samples = yt[0, sel0:sel1]
+    # kde = gaussian_kde(samples)
+    # xticks = np.linspace(samples.min(), samples.max(), 100)
+    # p = kde.evaluate(xticks)
+    # ax44.plot(xticks, p, 'k')
+    # mean, std = samples.mean(), samples.std() # Fit a Gaussian to the same data
+    # gaussian_pdf = norm.pdf(xticks, mean, std)  # Calculate the Gaussian PDF
+    # ax44.plot(xticks, gaussian_pdf, 'k--', label='Fitted Gaussian')  # Dashed line for Gaussian
+    # ax44.set_title('PDF')
+    # ax44.set_yscale('log', base=10) 
     
     for i, data in enumerate(psi1_k):
         ax2.plot(xaxis, data[iky,ikx,sel0:sel1:interv].real, colors[i], label=labels[i])
@@ -301,13 +305,13 @@ def plot_psi1_k_seriespdf(dt, sel0, sel1, ikx, iky, interv, xlim, ylim, xt, yt, 
         kde = gaussian_kde(samples)
         xticks = np.linspace(samples.min(), samples.max(), 100)
         p = kde.evaluate(xticks)
-        ax5.plot(xticks, p, colors[i], label=labels[i])
+        ax5.plot(p, xticks, colors[i], label=labels[i])
     
         samples = data[iky, ikx, sel0:sel1].imag
         kde = gaussian_kde(samples)
         xticks = np.linspace(samples.min(), samples.max(), 100)
         p = kde.evaluate(xticks)
-        ax55.plot(xticks, p, colors[i], label=labels[i])
+        ax55.plot(p, xticks, colors[i], label=labels[i])
     
     ax2.set_ylabel(r'$Re(\hat{{\psi}}_{{1,({:d},{:d})}})$'.format(ikx, iky))
     ax2.set_xlim(xlim)
@@ -317,16 +321,16 @@ def plot_psi1_k_seriespdf(dt, sel0, sel1, ikx, iky, interv, xlim, ylim, xt, yt, 
     samples = psi1_k[0][iky, ikx, sel0:sel1].real
     mean, std = samples.mean(), samples.std() # Fit a Gaussian to the same data
     gaussian_pdf = norm.pdf(xticks, mean, std)  # Calculate the Gaussian PDF
-    ax5.plot(xticks, gaussian_pdf, 'k--', label='Fitted Gaussian')  # Dashed line for Gaussian
-    ax5.set_yscale('log', base=10) 
-    ax5.set_ylim(ylim[0], np.max(p)+ylim[1])
+    ax5.plot(gaussian_pdf, xticks, 'k--', label='Fitted Gaussian')  # Dashed line for Gaussian
+    ax5.set_xscale('log', base=10) 
+    ax5.set_xlim(ylim[0], np.max(p)+ylim[1])
     
     samples = psi1_k[0][iky, ikx, sel0:sel1].imag
     mean, std = samples.mean(), samples.std() # Fit a Gaussian to the same data
     gaussian_pdf = norm.pdf(xticks, mean, std)  # Calculate the Gaussian PDF
-    ax55.plot(xticks, gaussian_pdf, 'k--', label='Fitted Gaussian')  # Dashed line for Gaussian
-    ax55.set_yscale('log', base=10) 
-    ax55.set_ylim(ylim[0], np.max(p)+ylim[1])
+    ax55.plot(gaussian_pdf, xticks, 'k--', label='Fitted Gaussian')  # Dashed line for Gaussian
+    ax55.set_xscale('log', base=10) 
+    ax55.set_xlim(ylim[0], np.max(p)+ylim[1])
 
     for i, data in enumerate(psi2_k):
         ax3.plot(xaxis, data[iky,ikx,sel0:sel1:interv].real, colors[i], label=labels[i])
@@ -336,94 +340,102 @@ def plot_psi1_k_seriespdf(dt, sel0, sel1, ikx, iky, interv, xlim, ylim, xt, yt, 
         kde = gaussian_kde(samples)
         xticks = np.linspace(samples.min(), samples.max(), 100)
         p = kde.evaluate(xticks)
-        ax6.plot(xticks, p, colors[i], label=labels[i])
+        ax6.plot(p, xticks, colors[i], label=labels[i])
     
         samples = data[iky, ikx, sel0:sel1].imag
         kde = gaussian_kde(samples)
         xticks = np.linspace(samples.min(), samples.max(), 100)
         p = kde.evaluate(xticks)
-        ax66.plot(xticks, p, colors[i], label=labels[i])
+        ax66.plot(p, xticks, colors[i], label=labels[i])
 
     ax3.set_ylabel(r'$Re(\hat{{\psi}}_{{2,({:d},{:d})}})$'.format(ikx, iky))
     ax3.set_xlabel('t')
     ax3.set_xlim(xlim)
-    ax3.legend(prop={'size': 8})
     ax33.set_ylabel(r'$Im(\hat{{\psi}}_{{2,({:d},{:d})}})$'.format(ikx, iky))
     ax33.set_xlabel('t')
     ax33.set_xlim(xlim)
-    ax33.legend(prop={'size': 8})
     
     samples = psi2_k[0][iky, ikx, sel0:sel1].real
     mean, std = samples.mean(), samples.std() # Fit a Gaussian to the same data
     gaussian_pdf = norm.pdf(xticks, mean, std)  # Calculate the Gaussian PDF
-    ax6.plot(xticks, gaussian_pdf, 'k--', label='Fitted Gaussian')  # Dashed line for Gaussian
-    ax6.set_ylim(ylim[0], np.max(p)+ylim[1])
-    ax6.set_yscale('log', base=10) 
+    ax6.plot(gaussian_pdf, xticks, 'k--', label='Gaussian fit')  # Dashed line for Gaussian
+    ax6.set_xlim(ylim[0], np.max(p)+ylim[1])
+    ax6.set_xscale('log', base=10) 
     
     samples = psi2_k[0][iky, ikx, sel0:sel1].imag
     mean, std = samples.mean(), samples.std() # Fit a Gaussian to the same data
     gaussian_pdf = norm.pdf(xticks, mean, std)  # Calculate the Gaussian PDF
-    ax66.plot(xticks, gaussian_pdf, 'k--', label='Fitted Gaussian')  # Dashed line for Gaussian
-    ax66.set_ylim(ylim[0], np.max(p)+ylim[1])
-    ax66.set_yscale('log', base=10) 
+    ax66.plot(gaussian_pdf, xticks, 'k--', label='Gaussian fit')  # Dashed line for Gaussian
+    ax66.set_xlim(ylim[0], np.max(p)+ylim[1])
+    ax66.set_xscale('log', base=10) 
+
+    ax2.set_title('Time series')
+    ax22.set_title('Time series')
+    ax5.set_title('log PDF')
+    ax55.set_title('log PDF')
+
+    plt.legend(prop={'size': 8}, bbox_to_anchor=(1, 1))
     plt.tight_layout()
 
 
 def plot_layer_seriespdf(dt, sel0, sel1, ikx, iky, interv, xlim, ylim, psi1, psi2, labels, colors):
-	xaxis = np.arange(sel0*dt, sel1*dt, interv*dt)
-
-	fig = plt.figure(figsize=(10,4))
-	widths = [5, 1]
-	heights = [1, 1]
-	spec = fig.add_gridspec(ncols=2, nrows=2, width_ratios=widths, height_ratios=heights)
-
-	plt.subplots_adjust(wspace=0.35, hspace=0.5)     # Adjust the overall spacing of the figure
-	ax1 = fig.add_subplot(spec[0, 0])
-	ax2 = fig.add_subplot(spec[1, 0])
-	ax3 = fig.add_subplot(spec[0, 1])
-	ax4 = fig.add_subplot(spec[1, 1])
-
-	# plot time series
-	for i, data in enumerate(psi1):
-		ax1.plot(xaxis, data[iky,ikx,sel0:sel1:interv], colors[i], label=labels[i])
-
-		samples = data[iky, ikx, sel0:sel1]
-		kde = gaussian_kde(samples)
-		xticks = np.linspace(samples.min(), samples.max(), 100)
-		p = kde.evaluate(xticks)
-		ax3.plot(xticks, p, colors[i], label=labels[i])
-
-	ax1.set_ylabel(r'$\psi_{{1,({:d},{:d})}}$'.format(ikx, iky))
-	ax1.set_xlim(xlim)
-
-	samples = psi1[0][iky, ikx, sel0:sel1]
-	mean, std = samples.mean(), samples.std() # Fit a Gaussian to the same data
-	gaussian_pdf = norm.pdf(xticks, mean, std)  # Calculate the Gaussian PDF
-	ax3.plot(xticks, gaussian_pdf, 'k--', label='Fitted Gaussian')  # Dashed line for Gaussian
-	ax3.set_yscale('log', base=10) 
-	ax3.set_title('PDF')
-
-	# plot time series
-	for i, data in enumerate(psi2):
-		ax2.plot(xaxis, data[iky,ikx,sel0:sel1:interv], colors[i], label=labels[i])
-
-		samples = data[iky, ikx, sel0:sel1]
-		kde = gaussian_kde(samples)
-		xticks = np.linspace(samples.min(), samples.max(), 100)
-		p = kde.evaluate(xticks)
-		ax4.plot(xticks, p, colors[i], label=labels[i])
-
-	ax2.set_ylabel(r'$\psi_{{2,({:d},{:d})}}$'.format(ikx, iky))
-	ax2.set_xlim(xlim)
-	ax2.legend(prop={'size': 8})
-
-	samples = psi2[0][iky, ikx, sel0:sel1]
-	mean, std = samples.mean(), samples.std() # Fit a Gaussian to the same data
-	gaussian_pdf = norm.pdf(xticks, mean, std)  # Calculate the Gaussian PDF
-	ax4.plot(xticks, gaussian_pdf, 'k--', label='Fitted Gaussian')  # Dashed line for Gaussian
-	ax4.set_yscale('log', base=10) 
-	ax4.set_title('PDF')
-	ax4.set_ylim(ylim[0], np.max(p)+ylim[1])
+    xaxis = np.arange(sel0*dt, sel1*dt, interv*dt)
+    
+    fig = plt.figure(figsize=(9,3.5))
+    widths = [5, 1]
+    heights = [1, 1]
+    spec = fig.add_gridspec(ncols=2, nrows=2, width_ratios=widths, height_ratios=heights)
+    
+    plt.subplots_adjust(wspace=0.35, hspace=0.5)     # Adjust the overall spacing of the figure
+    ax1 = fig.add_subplot(spec[0, 0])
+    ax2 = fig.add_subplot(spec[1, 0])
+    ax3 = fig.add_subplot(spec[0, 1])
+    ax4 = fig.add_subplot(spec[1, 1])
+    
+    # plot time series
+    for i, data in enumerate(psi1):
+        ax1.plot(xaxis, data[iky,ikx,sel0:sel1:interv], colors[i], label=labels[i])
+    
+        samples = data[iky, ikx, sel0:sel1]
+        kde = gaussian_kde(samples)
+        xticks = np.linspace(samples.min(), samples.max(), 100)
+        p = kde.evaluate(xticks)
+        ax3.plot(p, xticks, colors[i], label=labels[i])
+    
+    ax1.set_ylabel(r'$\psi_{{1,({:d},{:d})}}$'.format(ikx, iky))
+    ax1.set_xlim(xlim)
+    ax1.set_title('Time series')
+    
+    samples = psi1[0][iky, ikx, sel0:sel1]
+    mean, std = samples.mean(), samples.std() # Fit a Gaussian to the same data
+    gaussian_pdf = norm.pdf(xticks, mean, std)  # Calculate the Gaussian PDF
+    ax3.plot(gaussian_pdf, xticks, 'k--', label='Gaussian fit')  # Dashed line for Gaussian
+    ax3.set_xscale('log', base=10) 
+    ax3.set_title('log PDF')
+    
+    # plot time series
+    for i, data in enumerate(psi2):
+        ax2.plot(xaxis, data[iky,ikx,sel0:sel1:interv], colors[i], label=labels[i])
+    
+        samples = data[iky, ikx, sel0:sel1]
+        kde = gaussian_kde(samples)
+        xticks = np.linspace(samples.min(), samples.max(), 100)
+        p = kde.evaluate(xticks)
+        ax4.plot(p, xticks, colors[i], label=labels[i])
+    
+    ax2.set_ylabel(r'$\psi_{{2,({:d},{:d})}}$'.format(ikx, iky))
+    ax2.set_xlim(xlim)
+    ax2.set_xlabel('t')
+    
+    samples = psi2[0][iky, ikx, sel0:sel1]
+    mean, std = samples.mean(), samples.std() # Fit a Gaussian to the same data
+    gaussian_pdf = norm.pdf(xticks, mean, std)  # Calculate the Gaussian PDF
+    ax4.plot(gaussian_pdf, xticks, 'k--', label='Gaussian fit')  # Dashed line for Gaussian
+    ax4.set_xscale('log', base=10) 
+    ax4.set_xlim(ylim[0], np.max(p)+ylim[1])
+    
+    plt.legend(prop={'size': 8}, bbox_to_anchor=(1, 1))
+    plt.tight_layout()
 
 
 def plot_rmses(dt, sel0, sel1, s_rate, interv, xlim, data1, data2, labels, colors):
@@ -455,4 +467,180 @@ def plot_rmses(dt, sel0, sel1, s_rate, interv, xlim, data1, data2, labels, color
 	ax2.set_xlabel('t')
 	ax2.set_xlim(xlim)
 	ax2.legend(prop={'size': 8})
+	plt.tight_layout()
 
+
+def plot_mog(ix, iy, N_s, K, psi2_pos_cg, psi2_pos_lsm, R_psi2_pos_cg, R_psi2_pos_lsm, psi2_t, xlim, smoothing_factor=None, figsize=(4.5,4), smoother='gaussian_filter1d'):    
+    # Means and variances for the Gaussian components
+    means = psi2_pos_cg[:, iy, ix]
+    variances = R_psi2_pos_cg[:, iy, ix]
+    std_devs = np.sqrt(variances)
+    lsm_mean = psi2_pos_lsm[iy,ix]
+    lsm_std = np.sqrt(R_psi2_pos_lsm[iy,ix])
+    truth = psi2_t[iy, ix]
+
+    # Initialize the mixture PDF
+    x = np.linspace(xlim[0], xlim[1], 1000)
+    lsm_pdf = norm.pdf(x, lsm_mean, lsm_std)
+    mixture_pdf = np.zeros_like(x)
+    mixture_mean = np.mean(means)
+    mixture_variance = np.mean(variances) + np.var(means)
+    mixture_std_dev = np.sqrt(mixture_variance)
+    
+    for i in range(N_s):
+        # Compute the PDF for the current Gaussian component
+        pdf = norm.pdf(x, means[i], std_devs[i])
+        mixture_pdf += pdf / N_s  # Equal weights for each component
+        # # Plot the individual Gaussian component
+        # plt.plot(x, pdf, '--', label=f'Gaussian {i+1}: mean={means[i]:.2f}, std={std_devs[i]:.2f}')
+    
+    # Apply a smoothing kernel (Gaussian smoothing)
+    if smoother == 'gaussian_filter1d':
+        mixture_pdf = gaussian_filter1d(mixture_pdf, sigma=smoothing_factor)
+    if smoother == 'gaussian_kde':
+        mixture_pdf = gaussian_kde(mixture_pdf, bw_method=smoothing_factor)
+
+    hgt = max(np.max(mixture_pdf), np.max(lsm_pdf))
+    
+    fig = plt.figure(figsize=figsize)
+    truthline = np.linspace(0,hgt,num=2)
+    plt.plot(np.array([truth, truth]), truthline,'k',linewidth=2, label='truth')
+    plt.plot(x, lsm_pdf, label='one-step', color='red', linewidth=2)
+    plt.plot(x, mixture_pdf, label='multi-step', color='blue', linewidth=2)
+    fitted_pdf = norm.pdf(x, mixture_mean, mixture_std_dev)
+    plt.plot(x, fitted_pdf, 'b--', label=f'Fitted Gaussian', linewidth=2)
+    plt.title('x={:.2f},y={:.2f}'.format(-np.pi+ix/K*np.pi*2, -np.pi+iy/K*np.pi*2))
+    plt.xlabel(r'$\psi_2$')
+    plt.ylabel('PDF')
+    plt.xlim(xlim)
+    plt.legend(prop={'size': 9})
+
+
+def plot_mog_k(ix, iy, N_s, K, psi2_pos_cg, psi2_pos_lsm, R_psi2_pos_cg, R_psi2_pos_lsm, psi2_t, xlim, smoothing_sigma=10, figsize=(4.5,4)):    
+    # Means and variances for the Gaussian components
+    means = psi2_pos_cg[:, iy, ix]
+    variances = R_psi2_pos_cg[:, iy, ix]
+    std_devs = np.sqrt(variances)
+    lsm_mean = psi2_pos_lsm[iy,ix]
+    lsm_std = np.sqrt(R_psi2_pos_lsm[iy,ix])
+    truth = psi2_t[iy, ix]
+
+    # Initialize the mixture PDF
+    x = np.linspace(xlim[0], xlim[1], 1000)
+    lsm_pdf = norm.pdf(x, lsm_mean, lsm_std)
+    mixture_pdf = np.zeros_like(x)
+    mixture_mean = np.mean(means)
+    mixture_variance = np.mean(variances) + np.var(means)
+    mixture_std_dev = np.sqrt(mixture_variance)
+    
+    for i in range(N_s):
+        # Compute the PDF for the current Gaussian component
+        pdf = norm.pdf(x, means[i], std_devs[i])
+        mixture_pdf += pdf / N_s  # Equal weights for each component
+        # # Plot the individual Gaussian component
+        # plt.plot(x, pdf, '--', label=f'Gaussian {i+1}: mean={means[i]:.2f}, std={std_devs[i]:.2f}')
+    
+    # Apply a smoothing kernel (Gaussian smoothing)
+    mixture_pdf = gaussian_filter1d(mixture_pdf, sigma=smoothing_sigma)
+
+    hgt = max(np.max(mixture_pdf), np.max(lsm_pdf))
+    
+    fig = plt.figure(figsize=figsize)
+    truthline = np.linspace(0,hgt,num=2)
+    plt.plot(np.array([truth, truth]), truthline,'k',linewidth=2, label='truth')
+    plt.plot(x, lsm_pdf, label=f'one-step', color='red', linewidth=2)
+    plt.plot(x, mixture_pdf, label='multi-step', color='blue', linewidth=2)
+    fitted_pdf = norm.pdf(x, mixture_mean, mixture_std_dev)
+    plt.plot(x, fitted_pdf, 'b--', label=f'Fitted Gaussian', linewidth=2)
+    plt.title('kx={:d},ky={:d}'.format(ix, iy))
+    plt.xlabel(r'$\psi_2$')
+    plt.ylabel('PDF')
+    plt.xlim(xlim)
+    plt.legend(prop={'size': 9})
+
+
+def plot_mog_animation(N_s, K, psi2_pos_cg, psi2_pos_lsm, R_psi2_pos_cg, R_psi2_pos_lsm, psi2_t, xlim, smoothing_sigma=10, figsize=(4.5, 4), gif_name="mog_animation.gif"):
+    fig, ax = plt.subplots(figsize=figsize)
+    x = np.linspace(xlim[0], xlim[1], 1000)
+
+    def update(frame):
+        # Calculate indices
+        iy, ix = divmod(frame, 128)
+        
+        # Clear the previous frame
+        ax.clear()
+        
+        # Means and variances for the Gaussian components
+        means = psi2_pos_cg[:, iy, ix]
+        variances = R_psi2_pos_cg[:, iy, ix]
+        std_devs = np.sqrt(variances)
+        lsm_mean = psi2_pos_lsm[iy, ix]
+        lsm_std = np.sqrt(R_psi2_pos_lsm[iy, ix])
+        truth = psi2_t[iy, ix]
+
+        # LSM PDF
+        lsm_pdf = norm.pdf(x, lsm_mean, lsm_std)
+
+        # Initialize the mixture PDF
+        mixture_pdf = np.zeros_like(x)
+        for i in range(N_s):
+            pdf = norm.pdf(x, means[i], std_devs[i])
+            mixture_pdf += pdf / N_s  # Equal weights for each component
+
+        # Apply smoothing
+        mixture_pdf = gaussian_filter1d(mixture_pdf, sigma=smoothing_sigma)
+        
+        # Fitted Gaussian PDF
+        mixture_mean = np.mean(means)
+        mixture_variance = np.mean(variances) + np.var(means)
+        mixture_std_dev = np.sqrt(mixture_variance)
+        fitted_pdf = norm.pdf(x, mixture_mean, mixture_std_dev)
+
+        # Plotting
+        hgt = max(np.max(mixture_pdf), np.max(lsm_pdf))
+        truthline = np.linspace(0, hgt, num=2)
+        ax.plot([truth, truth], truthline, 'k', label='truth')
+        ax.plot(x, lsm_pdf, label='one-step', color='red')
+        ax.plot(x, mixture_pdf, label='multi-step', color='blue')
+        ax.plot(x, fitted_pdf, 'b--', label='Fitted Gaussian')
+        ax.set_title(f"ix={ix:d}, iy={iy:d}")
+        ax.set_xlim(xlim)
+    
+    # Create the animation
+    anim = FuncAnimation(fig, update, frames=128 * 128, repeat=False)
+    writer = PillowWriter(fps=10)
+    anim.save(gif_name, writer=writer)
+    plt.close(fig)
+
+
+def scatterplot(ix, iy, K, psi2_pos_cg, R_psi2_pos_cg, figsize=(5,5)):
+    means = psi2_pos_cg[:, iy, ix]
+    stds = np.sqrt(R_psi2_pos_cg[:, iy, ix])
+    plt.figure(figsize=(5,5))
+    plt.scatter(means, stds)
+    plt.title('x={:.2f},y={:.2f}'.format(-np.pi+ix/K*np.pi*2, -np.pi+iy/K*np.pi*2))
+    plt.xlabel('means')
+    plt.ylabel('stds')
+
+
+def calculate_skewness_kurtosis(ix, iy, N_s, K, psi2_pos_cg, R_psi2_pos_cg, num_samples=10000):
+    # Means and variances for the Gaussian components
+    means = psi2_pos_cg[:, iy, ix]
+    variances = R_psi2_pos_cg[:, iy, ix]
+    std_devs = np.sqrt(variances)
+    
+    # Sample data from the mixture distribution
+    samples = []
+    for i in range(N_s):
+        # Generate samples for each Gaussian component
+        component_samples = np.random.normal(means[i], std_devs[i], num_samples // N_s)
+        samples.extend(component_samples)
+
+    # Convert samples list to array for calculations
+    samples = np.array(samples)
+
+    # Calculate skewness and kurtosis from the sampled data
+    skewness_value = skew(samples)
+    kurtosis_value = kurtosis(samples)
+
+    return skewness_value, kurtosis_value
