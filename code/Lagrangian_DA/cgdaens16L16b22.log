@@ -1,5 +1,0 @@
-nohup: ignoring input
-/grad/wang3262/Proj_1_LagrangeDA/code/Lagrangian_DA.py:624: RuntimeWarning: divide by zero encountered in divide
-  InvBoB = 1 / sigma_1**2
-/grad/wang3262/Proj_1_LagrangeDA/code/Lagrangian_DA.py:135: RuntimeWarning: divide by zero encountered in divide
-  Ck = 1 / invCk
