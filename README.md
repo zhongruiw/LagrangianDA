@@ -1,6 +1,6 @@
 # Code for the paper "A Closed-Form Nonlinear Data Assimilation Algorithm for Multi-Layer Flow Fields" ##
 
-<img src="multistepDA" width="500" />
+<img src="./multistepDA.png" width="1000" />
 
 ## Structure
 1. Generate QG simulations as the reference run ("truth"): [run_twolayer_qgtopo.m](./code/qg_2layer_topo).
