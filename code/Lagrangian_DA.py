@@ -7,6 +7,7 @@ from mode_truc import truncate, inv_truncate
 from conj_symm_tools import avg_conj_symm, map_conj_symm
 from sklearn.linear_model import LinearRegression
 import gc
+from time import time
 
 ''' 
 Lagrangian DA 
@@ -44,7 +45,7 @@ def get_A_OU_flow(psi1_k_t, A0_, a0_, F1, F2):
 
 
 @jit(nopython=True)
-def get_A_CG_nonlinear(K, N, k_left, psi1_hat, h_hat, k_index_map, list_dic_k_map, kd):
+def get_A_CG_nonlinear(K, N, k_left, psi1_hat, h_hat, k_index_map, index_dic_k_map, kd):
     # nonlinear summation part for A0, a0, A1 and a1
     nonlinear_sum_A0 = np.zeros_like(psi1_hat, dtype=np.complex128)
     nonlinear_sum_a0 = np.zeros_like(psi1_hat, dtype=np.complex128)
@@ -62,7 +63,7 @@ def get_A_CG_nonlinear(K, N, k_left, psi1_hat, h_hat, k_index_map, list_dic_k_ma
             psi1_m = psi1_hat[:, im_]
             n = (kx-mx, ky-my)
             if n in k_index_map:
-                in_ = list_dic_k_map.index(n)
+                in_ = index_dic_k_map[n]
                 psi1_n = psi1_hat[:, in_]
                 h_n = h_hat[in_]
                 det_mn = np.linalg.det(np.array([m, n]))
@@ -99,7 +100,7 @@ def get_A_CG_nonlinear(K, N, k_left, psi1_hat, h_hat, k_index_map, list_dic_k_ma
     return nonlinear_sum_A0, nonlinear_sum_a0, nonlinear_sum_A1, nonlinear_sum_a1
 
 
-def get_A_CG(K, KX, KY, k_index_map, kd, beta, kappa, nu, U, psi1_hat, h_hat):
+def get_A_CG(K, KX, KY, k_index_map, index_dic_k_map, kd, beta, kappa, nu, U, psi1_hat, h_hat):
     '''
     1. The mode truncation should be done outside this function. 
     2. K is the original number of modes in each x and y direction. 
@@ -114,7 +115,6 @@ def get_A_CG(K, KX, KY, k_index_map, kd, beta, kappa, nu, U, psi1_hat, h_hat):
     K_squared4 = K_squared**4
     invCk = K_squared * (K_squared + kd**2)
     dX = 1j * KX
-    list_dic_k_map = list(k_index_map.keys())
 
     # linear part for A0, a0, A1 and a1
     linear_A0 = dX * ((K_squared_kd2 * beta - K_squared2 * U) * psi1_hat - kd**2/2 * U * h_hat) - nu * K_squared4 * (invCk * psi1_hat - kd**2/2 * h_hat)
@@ -124,7 +124,7 @@ def get_A_CG(K, KX, KY, k_index_map, kd, beta, kappa, nu, U, psi1_hat, h_hat):
     linear_A1 = np.tile(np.diag(linear_A1_diag)[None,:,:], (N,1,1)) 
     linear_a1 = np.tile(np.diag(linear_a1_diag)[None,:,:], (N,1,1)) 
 
-    nonlinear_sum_A0, nonlinear_sum_a0, nonlinear_sum_A1, nonlinear_sum_a1 = get_A_CG_nonlinear(K, N, k_left, psi1_hat, h_hat, k_index_map, list_dic_k_map, kd)
+    nonlinear_sum_A0, nonlinear_sum_a0, nonlinear_sum_A1, nonlinear_sum_a1 = get_A_CG_nonlinear(K, N, k_left, psi1_hat, h_hat, k_index_map, index_dic_k_map, kd)
 
     # aggregate 
     A0 = linear_A0 + nonlinear_sum_A0
@@ -279,31 +279,38 @@ def forward_OU_flow(N, N_chunk, dt, psi1_k_t, mu0, R0, mu_t, R_t, A0_, A1, a0_, 
     return mu_t, R_t
 
 
-def forward_CG(N, N_chunk, dt, K, KX_cut, KY_cut, k_index_map_cut, mu0, R0, InvBoB, sigma_2, mu_t, R_t, kd, beta, kappa, nu, U, psi1_k_t_cut_T, h_k_cut, s_rate=1, forward_R=True):
+def forward_CG(N, N_chunk, dt, K, KX_cut, KY_cut, k_index_map_cut, index_dic_k_map, mu0, R0, InvBoB, sigma_2, mu_t, R_t, kd, beta, kappa, nu, U, psi1_k_t_cut_T, h_k_cut, s_rate=1, forward_R=True):
     # precompute
     sigma_2_sq = sigma_2 * np.conjugate(sigma_2)
+    t_getA = 0
+    t_meanvar = 0
 
     if forward_R == True:
         for i in range(1, N):
             i_chunk = (i-1) % N_chunk
             if i_chunk == 0:
-                A0_t, a0_t, A1_t, a1_t= get_A_CG(K, KX_cut, KY_cut, k_index_map_cut, kd, beta, kappa, nu, U, psi1_k_t_cut_T[i-1:i-1+N_chunk,:], h_k_cut)
-            
+                t0 = time()
+                A0_t, a0_t, A1_t, a1_t= get_A_CG(K, KX_cut, KY_cut, k_index_map_cut, index_dic_k_map, kd, beta, kappa, nu, U, psi1_k_t_cut_T[i-1:i-1+N_chunk,:], h_k_cut)
+                t_getA += time() - t0
+
             A0 = A0_t[i_chunk, :]
             a0 = a0_t[i_chunk, :]
             A1 = A1_t[i_chunk, :, :]
             a1 = a1_t[i_chunk, :, :]
 
+            t0 = time()
             # precompute
             a1R0 = a1 @ R0
             R0A1_H = R0 @ A1.conj().T
             psi1_diff = psi1_k_t_cut_T[i, :] - psi1_k_t_cut_T[i-1, :]
             
             # Update the posterior mean and posterior covariance
-            mu = mu0 + (a0 + a1 @ mu0) * dt + (R0 @ A1.conj().T) * InvBoB @ (psi1_diff - (A0 + A1 @ mu0) * dt)
+            mu = mu0 + (a0 + a1 @ mu0) * dt + R0A1_H * InvBoB @ (psi1_diff - (A0 + A1 @ mu0) * dt)
             R = R0 + (a1R0 + a1R0.conj().T + np.diag(sigma_2_sq) - (R0A1_H) * InvBoB @ R0A1_H.conj().T) * dt
             mu0 = mu
             R0 = R
+
+            t_meanvar += time() - t0
 
             if i % s_rate == 0:
                 i_sub = int(i / s_rate)
@@ -313,13 +320,16 @@ def forward_CG(N, N_chunk, dt, K, KX_cut, KY_cut, k_index_map_cut, mu0, R0, InvB
         for i in range(1, N):
             i_chunk = (i-1) % N_chunk
             if i_chunk == 0:
-                A0_t, a0_t, A1_t, a1_t= get_A_CG(K, KX_cut, KY_cut, k_index_map_cut, kd, beta, kappa, nu, U, psi1_k_t_cut_T[i-1:i-1+N_chunk,:], h_k_cut)
-            
+                t0 = time()
+                A0_t, a0_t, A1_t, a1_t= get_A_CG(K, KX_cut, KY_cut, k_index_map_cut, index_dic_k_map, kd, beta, kappa, nu, U, psi1_k_t_cut_T[i-1:i-1+N_chunk,:], h_k_cut)
+                t_getA += time() - t0
+
             A0 = A0_t[i_chunk, :]
             a0 = a0_t[i_chunk, :]
             A1 = A1_t[i_chunk, :, :]
             a1 = a1_t[i_chunk, :, :]
 
+            t0 = time()
             # precompute
             psi1_diff = psi1_k_t_cut_T[i, :] - psi1_k_t_cut_T[i-1, :]
             
@@ -327,10 +337,14 @@ def forward_CG(N, N_chunk, dt, K, KX_cut, KY_cut, k_index_map_cut, mu0, R0, InvB
             mu = mu0 + (a0 + a1 @ mu0) * dt + (R0 @ A1.conj().T) * InvBoB @ (psi1_diff - (A0 + A1 @ mu0) * dt)
             mu0 = mu
 
+            t_meanvar += time() - t0
+
             if i % s_rate == 0:
                 i_sub = int(i / s_rate)
                 mu_t[:, i_sub] = mu
                 R_t[:, i_sub] = np.diag(R0)
+    print('t_getA=',  t_getA)
+    print('t_meanvar=', t_meanvar)
 
     return mu_t, R_t
 
@@ -654,7 +668,7 @@ class Lagrangian_DA_CG:
 
         # self.k_index_map_cut = {(KX[iy, ix], KY[iy, ix]): (ix, iy) for ix in range(K) for iy in range(K) if (KX[iy, ix]**2 + KY[iy, ix]**2) <=r_cut**2}
 
-        # Create an empty Numba-typed dictionary with appropriate key and value types
+        # Create an empty Numba-typed dictionary
         k_index_map_cut = Dict.empty(
             key_type=types.Tuple([types.float64, types.float64]),  
             value_type=types.Tuple([types.int64, types.int64])   
@@ -667,6 +681,16 @@ class Lagrangian_DA_CG:
                 if (kx**2 + ky**2) <= r_cut**2:
                     k_index_map_cut[(kx, ky)] = (ix, iy)
         self.k_index_map_cut = k_index_map_cut
+
+        # Define a Numba-typed dictionary of the index of flattened K_
+        index_dic_k_map = Dict.empty(
+            key_type=types.Tuple([types.float64, types.float64]), 
+            value_type=types.int64
+        )
+        # Populate the Numba dictionary
+        for idx, key in enumerate(k_index_map_cut):
+            index_dic_k_map[key] = idx
+        self.index_dic_k_map = index_dic_k_map
 
 
     def forward(self, N, N_chunk, dt, N_s=1, sigma_1=1., sigma_2=4., s_rate=1, R0=None, forward_R=True, **kargs):
@@ -699,7 +723,7 @@ class Lagrangian_DA_CG:
             R_t = np.zeros((K_, N_sub), dtype='complex')  # posterior covariance
             R_t[:, 0] = np.diag(R0)  # only save the diagonal elements
 
-            mu_t, R_t = forward_CG(N, N_chunk, dt, self.K, self.KX_cut, self.KY_cut, self.k_index_map_cut, mu0, R0, InvBoB, sigma_2, mu_t, R_t, self.kd, self.beta, self.kappa, self.nu, self.U, psi1_k_t_cut, self.h_k_cut, s_rate, forward_R)
+            mu_t, R_t = forward_CG(N, N_chunk, dt, self.K, self.KX_cut, self.KY_cut, self.k_index_map_cut, self.index_dic_k_map, mu0, R0, InvBoB, sigma_2, mu_t, R_t, self.kd, self.beta, self.kappa, self.nu, self.U, psi1_k_t_cut, self.h_k_cut, s_rate, forward_R)
 
             return mu_t, R_t
 
@@ -728,16 +752,22 @@ class Lagrangian_DA_CG:
                 noise = map_conj_symm(noise, r1)
                 noise = truncate(noise, self.r_cut, self.style)
                 noise = np.transpose(np.reshape(noise, (-1, N, 1), order='F'), (1,2,0))
+
+                t0 = time()
                 psitau_k_s = sampling(1, dt, mu_eigen_t, R_eigen_t, Sigma, a0, a1, noise)
+                print('t_sample=', time() - t0)
                 del noise
                 gc.collect()  # Explicitly trigger garbage collection
                 psi1_k_s, _ = mu2layer(psitau_k_s[0, :, :], self.K, self.r_cut, r1, r2, self.style, transpose=True) # psi_hat should be of shape (N,k_left)
                 del psitau_k_s
                 gc.collect()  # Explicitly trigger garbage collection
 
-                mu_t[n_s, :, :], R_t[n_s, :, :] = forward_CG(N, N_chunk, dt, self.K, self.KX_cut, self.KY_cut, self.k_index_map_cut, mu0, R0, InvBoB, sigma_2, mu_t[n_s, :, :], R_t[n_s, :, :], self.kd, self.beta, self.kappa, self.nu, self.U, psi1_k_s, self.h_k_cut, s_rate, forward_R)
+                t0 = time()
+                mu_t[n_s, :, :], R_t[n_s, :, :] = forward_CG(N, N_chunk, dt, self.K, self.KX_cut, self.KY_cut, self.k_index_map_cut, self.index_dic_k_map, mu0, R0, InvBoB, sigma_2, mu_t[n_s, :, :], R_t[n_s, :, :], self.kd, self.beta, self.kappa, self.nu, self.U, psi1_k_s, self.h_k_cut, s_rate, forward_R)
+                print('t_forward=', time() - t0)
 
             return mu_t, R_t
+
 
     def forward_model(self, N, dt, psi1_k_t0, psi2_k_t0, cali=False, **kargs):
         '''

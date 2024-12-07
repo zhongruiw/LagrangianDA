@@ -498,7 +498,8 @@ def plot_mog(ix, iy, N_s, K, psi2_pos_cg, psi2_pos_lsm, R_psi2_pos_cg, R_psi2_po
     if smoother == 'gaussian_filter1d':
         mixture_pdf = gaussian_filter1d(mixture_pdf, sigma=smoothing_factor)
     if smoother == 'gaussian_kde':
-        mixture_pdf = gaussian_kde(mixture_pdf, bw_method=smoothing_factor)
+        mixture_pdf_ = gaussian_kde(x, bw_method=smoothing_factor, weights=mixture_pdf)
+        mixture_pdf = mixture_pdf_(x)
 
     hgt = max(np.max(mixture_pdf), np.max(lsm_pdf))
     
@@ -507,13 +508,14 @@ def plot_mog(ix, iy, N_s, K, psi2_pos_cg, psi2_pos_lsm, R_psi2_pos_cg, R_psi2_po
     plt.plot(np.array([truth, truth]), truthline,'k',linewidth=2, label='truth')
     plt.plot(x, lsm_pdf, label='one-step', color='red', linewidth=2)
     plt.plot(x, mixture_pdf, label='multi-step', color='blue', linewidth=2)
-    fitted_pdf = norm.pdf(x, mixture_mean, mixture_std_dev)
-    plt.plot(x, fitted_pdf, 'b--', label=f'Fitted Gaussian', linewidth=2)
+    # fitted_pdf = norm.pdf(x, mixture_mean, mixture_std_dev)
+    # plt.plot(x, fitted_pdf, 'b--', label=f'Fitted Gaussian', linewidth=2)
     plt.title('x={:.2f},y={:.2f}'.format(-np.pi+ix/K*np.pi*2, -np.pi+iy/K*np.pi*2))
     plt.xlabel(r'$\psi_2$')
     plt.ylabel('PDF')
     plt.xlim(xlim)
     plt.legend(prop={'size': 9})
+
 
 
 def plot_mog_k(ix, iy, N_s, K, psi2_pos_cg, psi2_pos_lsm, R_psi2_pos_cg, R_psi2_pos_lsm, psi2_t, xlim, smoothing_sigma=10, figsize=(4.5,4)):    
