@@ -2,8 +2,6 @@
 *.png
 *.mat
 *.gif
-*.npy
-*.npz
 report/Report_Zhongrui_0126_QG_LangrangeDA.pdf
 *.pdf
 refers/LDA_notes.pdf
@@ -66,7 +64,8 @@ code/cgdaens8L64b22.log
 code/lsmdaL64b22_corr.py
 /aguposter
 *.pages
-*.pages
-code/Lagrangian_DA/nongaussian.pages
-*.pages
-*.pages
+
+/code/legacy
+code/Lagrangian_DA.ipynb
+/code/qg_2layer_topo/legacy
+/data/legacy
