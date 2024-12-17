@@ -1,4 +1,4 @@
-# Code for the paper "A Closed-Form Nonlinear Data Assimilation Algorithm for Multi-Layer Flow Fields" ##
+# Code for the paper "[A Closed-Form Nonlinear Data Assimilation Algorithm for Multi-Layer Flow Fields](https://arxiv.org/abs/2412.11042)" ##
 
 <img src="./multistepDA.png" width="1000" />
 
@@ -8,4 +8,15 @@
 3. The [data](./data) folder includes the example data for a short integration time of QG, which is used for the computational cost analysis.
 
 ## Paper
-paper in preparation.
+If you find the code useful, please consider citing the paper 
+```
+@misc{wang2024closedformnonlineardataassimilation,
+      title={A Closed-Form Nonlinear Data Assimilation Algorithm for Multi-Layer Flow Fields}, 
+      author={Zhongrui Wang and Nan Chen and Di Qi},
+      year={2024},
+      eprint={2412.11042},
+      archivePrefix={arXiv},
+      primaryClass={physics.flu-dyn},
+      url={https://arxiv.org/abs/2412.11042}, 
+}
+```
